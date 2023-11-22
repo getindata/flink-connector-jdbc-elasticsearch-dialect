@@ -1,0 +1,417 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.getindata</groupId>
+  <artifactId>flink-connector-jdbc-elasticsearch-dialect</artifactId>
+  <version>0.1.0-SNAPSHOT</version>
+
+  <name>flink-connector-jdbc-elasticsearch-dialect</name>
+  <description>Elasticsearch SQL Dialect for flink-connector-jdbc.</description>
+  <url>https://github.com/getindata/flink-connector-jdbc-elasticsearch-dialect</url>
+
+  <licenses>
+    <license>
+      <name>The Apache License, Version 2.0</name>
+      <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
+    </license>
+  </licenses>
+
+  <developers>
+    <developer>
+      <name>GetInData</name>
+      <email>office@getindata.com</email>
+      <organization>GetInData</organization>
+      <organizationUrl>https://getindata.com</organizationUrl>
+    </developer>
+  </developers>
+
+  <scm>
+    <connection>scm:git:git://github.com/getindata/flink-connector-jdbc-elasticsearch-dialect</connection>
+    <developerConnection>scm:git:ssh://github.com/getindata/flink-connector-jdbc-elasticsearch-dialect
+    </developerConnection>
+    <url>https://github.com/getindata/flink-connector-jdbc-elasticsearch-dialect/tree/main</url>
+  </scm>
+
+  <properties>
+    <maven.compiler.source>8</maven.compiler.source>
+    <maven.compiler.target>8</maven.compiler.target>
+    <scala.binary.version>2.12</scala.binary.version>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+    <elasticsearch.version>8.11.1</elasticsearch.version>
+    <flink.version>1.17.1</flink.version>
+    <flink-connector-jdbc.version>3.1.1-1.17</flink-connector-jdbc.version>
+    <jackson.version>2.15.2</jackson.version>
+
+    <!-- Test -->
+    <test.unit.pattern>**/*Test.*</test.unit.pattern>
+    <flink.XmxITCase>2048m</flink.XmxITCase>
+    <flink.XmxUnitTest>1024m</flink.XmxUnitTest>
+    <!-- Number of forkCounts for ITCase and UnitTest should take into account allocated memory
+     to the jvm (-Xmx) and the available memory on the machine running the test -->
+    <flink.forkCountITCase>2</flink.forkCountITCase>
+    <flink.forkCountUnitTest>4</flink.forkCountUnitTest>
+    <flink.surefire.baseArgLine>-XX:+UseG1GC -Xms256m</flink.surefire.baseArgLine>
+
+    <assertj.version>3.23.1</assertj.version>
+    <junit.version>5.9.1</junit.version>
+    <mockito.version>2.21.0</mockito.version>
+    <testcontainers.version>1.18.2</testcontainers.version>
+  </properties>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.8.0</version>
+        <configuration>
+          <source>${maven.compiler.source}</source>
+          <target>${maven.compiler.target}</target>
+          <!-- The semantics of this option are reversed, see MCOMPILER-209. -->
+          <useIncrementalCompilation>false</useIncrementalCompilation>
+          <compilerArgs>
+            <!-- Prevents recompilation due to missing package-info.class, see MCOMPILER-205 -->
+            <arg>-Xpkginfo:always</arg>
+          </compilerArgs>
+        </configuration>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.0.0-M8</version>
+        <configuration>
+          <!-- enables TCP/IP communication between surefire and forked JVM-->
+          <forkNode implementation="org.apache.maven.plugin.surefire.extensions.SurefireForkNodeFactory"/>
+          <trimStackTrace>false</trimStackTrace>
+          <systemPropertyVariables>
+            <forkNumber>0${surefire.forkNumber}</forkNumber>
+            <!-- $$ ensures that surefire resolves this to the current forkNumber,
+                 instead of maven during initialization -->
+            <mvn.forkNumber>$${surefire.forkNumber}</mvn.forkNumber>
+            <user.country>US</user.country>
+            <user.language>en</user.language>
+            <project.basedir>${project.basedir}</project.basedir>
+            <junit.jupiter.extensions.autodetection.enabled>true</junit.jupiter.extensions.autodetection.enabled>
+          </systemPropertyVariables>
+          <argLine>-Xms256m -Xmx2048m -XX:+UseG1GC</argLine>
+        </configuration>
+        <executions>
+          <execution>
+            <!--execute all the unit tests-->
+            <id>default-test</id>
+            <phase>test</phase>
+            <goals>
+              <goal>test</goal>
+            </goals>
+            <configuration>
+              <includes>
+                <include>${test.unit.pattern}</include>
+              </includes>
+              <forkCount>${flink.forkCountUnitTest}</forkCount>
+              <argLine>${flink.surefire.baseArgLine} -Xmx${flink.XmxUnitTest}</argLine>
+            </configuration>
+          </execution>
+          <execution>
+            <!--execute all the integration tests-->
+            <id>integration-tests</id>
+            <phase>integration-test</phase>
+            <goals>
+              <goal>test</goal>
+            </goals>
+            <configuration>
+              <includes>
+                <include>**/*.*</include>
+              </includes>
+              <excludes>
+                <exclude>${test.unit.pattern}</exclude>
+              </excludes>
+              <forkCount>${flink.forkCountITCase}</forkCount>
+              <argLine>${flink.surefire.baseArgLine} -Xmx${flink.XmxITCase}</argLine>
+              <reuseForks>false</reuseForks>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-shade-plugin</artifactId>
+        <version>1.6</version>
+        <executions>
+          <execution>
+            <phase>package</phase>
+            <goals>
+              <goal>shade</goal>
+            </goals>
+            <configuration>
+              <artifactSet>
+                <includes>
+                  <include>com.getindata:flink-connector-jdbc-elasticsearch-dialect</include>
+                </includes>
+              </artifactSet>
+              <transformers>
+                <transformer
+                    implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
+                  <resource>META-INF/services/org.apache.flink.connector.jdbc.dialect.JdbcDialectFactory</resource>
+                </transformer>
+              </transformers>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>build-helper-maven-plugin</artifactId>
+        <version>3.3.0</version>
+        <executions>
+          <execution>
+            <id>parse-version</id>
+            <goals>
+              <goal>parse-version</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+
+  <dependencies>
+    <!-- Flink dependencies -->
+    <dependency>
+      <groupId>org.apache.flink</groupId>
+      <artifactId>flink-table-common</artifactId>
+      <version>${flink.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.flink</groupId>
+      <artifactId>flink-connector-jdbc</artifactId>
+      <version>${flink-connector-jdbc.version}</version>
+    </dependency>
+
+    <!-- Elastic dependencies -->
+    <dependency>
+      <groupId>org.elasticsearch.plugin</groupId>
+      <artifactId>x-pack-sql-jdbc</artifactId>
+      <version>${elasticsearch.version}</version>
+      <scope>provided</scope>
+    </dependency>
+
+    <!-- Test dependencies -->
+    <dependency>
+      <groupId>org.junit</groupId>
+      <artifactId>junit-bom</artifactId>
+      <version>${junit.version}</version>
+      <type>pom</type>
+      <scope>import</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>${junit.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.vintage</groupId>
+      <artifactId>junit-vintage-engine</artifactId>
+      <version>${junit.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.assertj</groupId>
+      <artifactId>assertj-core</artifactId>
+      <version>${assertj.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.mockito</groupId>
+      <artifactId>mockito-core</artifactId>
+      <version>${mockito.version}</version>
+      <type>jar</type>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>${testcontainers.version}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- Flink test dependencies -->
+    <dependency>
+      <groupId>org.apache.flink</groupId>
+      <artifactId>flink-test-utils</artifactId>
+      <version>${flink.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.flink</groupId>
+      <artifactId>flink-test-utils-junit</artifactId>
+      <version>${flink.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.flink</groupId>
+      <artifactId>flink-table-common</artifactId>
+      <version>${flink.version}</version>
+      <type>test-jar</type>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.flink</groupId>
+      <artifactId>flink-streaming-java</artifactId>
+      <version>${flink.version}</version>
+      <type>test-jar</type>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.flink</groupId>
+      <artifactId>flink-core</artifactId>
+      <version>${flink.version}</version>
+      <scope>test</scope>
+      <type>test-jar</type>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.flink</groupId>
+      <artifactId>flink-table-planner_${scala.binary.version}</artifactId>
+      <version>${flink.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.flink</groupId>
+      <artifactId>flink-table-planner_${scala.binary.version}</artifactId>
+      <version>${flink.version}</version>
+      <type>test-jar</type>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.flink</groupId>
+      <artifactId>flink-table-api-scala-bridge_${scala.binary.version}</artifactId>
+      <version>${flink.version}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- Elastic test dependencies -->
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>elasticsearch</artifactId>
+      <version>${testcontainers.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.elasticsearch.client</groupId>
+      <artifactId>elasticsearch-rest-client</artifactId>
+      <version>${elasticsearch.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+      <version>${jackson.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.fasterxml.jackson.datatype</groupId>
+      <artifactId>jackson-datatype-jsr310</artifactId>
+      <version>${jackson.version}</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <profiles>
+    <profile>
+      <id>bump-patch</id>
+      <activation>
+        <property>
+          <name>bumpPatch</name>
+        </property>
+      </activation>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.codehaus.mojo</groupId>
+            <artifactId>versions-maven-plugin</artifactId>
+
+            <executions>
+              <execution>
+                <goals>
+                  <goal>set</goal>
+                </goals>
+                <phase>validate</phase>
+                <configuration>
+                  <newVersion>
+                    ${parsedVersion.majorVersion}.${parsedVersion.minorVersion}.${parsedVersion.nextIncrementalVersion}-SNAPSHOT
+                  </newVersion>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+    <profile>
+      <id>bump-minor</id>
+      <activation>
+        <property>
+          <name>bumpMinor</name>
+        </property>
+      </activation>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.codehaus.mojo</groupId>
+            <artifactId>versions-maven-plugin</artifactId>
+
+            <executions>
+              <execution>
+                <goals>
+                  <goal>set</goal>
+                </goals>
+                <phase>validate</phase>
+                <configuration>
+                  <newVersion>
+                    ${parsedVersion.majorVersion}.${parsedVersion.nextMinorVersion}.0-SNAPSHOT
+                  </newVersion>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+    <profile>
+      <id>bump-major</id>
+      <activation>
+        <property>
+          <name>bumpMajor</name>
+        </property>
+      </activation>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.codehaus.mojo</groupId>
+            <artifactId>versions-maven-plugin</artifactId>
+
+            <executions>
+              <execution>
+                <goals>
+                  <goal>set</goal>
+                </goals>
+                <phase>validate</phase>
+                <configuration>
+                  <newVersion>${parsedVersion.nextMajorVersion}.0.0-SNAPSHOT</newVersion>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
+
+</project>
