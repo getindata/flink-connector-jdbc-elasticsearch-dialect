@@ -21,13 +21,15 @@ package com.getindata.flink.connector.jdbc.testutils.databases.elasticsearch;
 import org.apache.flink.connector.jdbc.testutils.DatabaseExtension;
 import org.apache.flink.connector.jdbc.testutils.DatabaseMetadata;
 import org.apache.flink.util.FlinkRuntimeException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.testcontainers.containers.output.Slf4jLogConsumer;
 import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.elasticsearch.ElasticsearchContainer;
 
 import java.time.Duration;
 
 import static com.getindata.flink.connector.jdbc.testutils.databases.elasticsearch.ElasticsearchMetadata.PASSWORD;
-import static com.getindata.flink.connector.jdbc.testutils.databases.elasticsearch.ElasticsearchMetadata.USERNAME;
 
 
 /**
@@ -35,13 +37,10 @@ import static com.getindata.flink.connector.jdbc.testutils.databases.elasticsear
  */
 public class ElasticsearchDatabase extends DatabaseExtension implements ElasticsearchImages {
 
-    private static final ElasticsearchContainer CONTAINER =
-            new ElasticsearchContainer(ELASTICSEARCH_8)
-                    .waitingFor(
-                            Wait.forHttp("/_license")
-                                    .withBasicCredentials(USERNAME, PASSWORD)
-                                    .withReadTimeout(Duration.ofSeconds(5))
-                                    .withStartupTimeout(Duration.ofMinutes(5)));
+    private static final Logger LOGGER = LoggerFactory.getLogger(ElasticsearchDatabase.class);
+    private static final ElasticsearchContainer CONTAINER = new ElasticsearchContainer(ELASTICSEARCH_8)
+            .waitingFor(Wait.forLogMessage(".*license mode is .*", 1))
+            .withLogConsumer(new Slf4jLogConsumer(LOGGER));
 
     private static ElasticsearchMetadata metadata;
     private static ElasticsearchRestClient client;
