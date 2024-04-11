@@ -2,13 +2,17 @@
 
 ## [Unreleased]
 
+## [0.2.1] - 2024-04-11
+
 ## [0.2.0] - 2023-11-22
 
 ## [0.1.0] - 2023-11-22
 
 -   Initial implementation of Elasticsearch SQL Dialect for flink-connector-jdbc
 
-[Unreleased]: https://github.com/getindata/flink-connector-jdbc-elasticsearch-dialect/compare/0.2.0...HEAD
+[Unreleased]: https://github.com/getindata/flink-connector-jdbc-elasticsearch-dialect/compare/0.2.1...HEAD
+
+[0.2.1]: https://github.com/getindata/flink-connector-jdbc-elasticsearch-dialect/compare/0.2.0...0.2.1
 
 [0.2.0]: https://github.com/getindata/flink-connector-jdbc-elasticsearch-dialect/compare/0.1.0...0.2.0
 
