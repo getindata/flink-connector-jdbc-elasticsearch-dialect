@@ -42,8 +42,8 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
     <elasticsearch.version>8.11.1</elasticsearch.version>
-    <flink.version>1.17.1</flink.version>
-    <flink-connector-jdbc.version>3.1.1-1.17</flink-connector-jdbc.version>
+    <flink.version>1.18.1</flink.version>
+    <flink-connector-jdbc.version>3.1.2-1.18</flink-connector-jdbc.version>
     <jackson.version>2.15.2</jackson.version>
 
     <!-- Test -->
