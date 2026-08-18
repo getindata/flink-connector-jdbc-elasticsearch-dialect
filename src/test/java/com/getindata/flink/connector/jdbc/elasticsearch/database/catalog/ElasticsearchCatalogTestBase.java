@@ -6,7 +6,6 @@ import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
-import org.apache.commons.compress.utils.IOUtils;
 
 import java.io.IOException;
 import java.time.LocalDate;
@@ -16,7 +15,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class ElasticsearchCatalogTestBase implements ElasticsearchTestBase {
 
@@ -86,9 +85,10 @@ public class ElasticsearchCatalogTestBase implements ElasticsearchTestBase {
     }
 
     protected static byte[] loadResource(String path) throws IOException {
-        return IOUtils.toByteArray(
-                Objects.requireNonNull(ElasticsearchCatalogTestBase.class.getClassLoader().getResourceAsStream(path))
-        );
+        try (var in = Objects.requireNonNull(
+                ElasticsearchCatalogTestBase.class.getClassLoader().getResourceAsStream(path))) {
+            return in.readAllBytes();
+        }
     }
 
     protected static String calculateExpectedTemporalLowerBound() {

@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+-   Upgrade to Flink 2.2.1 and flink-connector-jdbc 4.1.0-2.2
+-   Raise the minimum required Java version to 17
+-   Upgrade Elasticsearch client/driver and the test image to 8.19.20
+-   Upgrade Testcontainers to 2.0.5 (fixes Docker environment detection on recent Docker releases)
+-   Upgrade JUnit, AssertJ, Jackson, logback, SLF4J, OkHttp and the Maven plugins
+-   Declare `flink-connector-base` and `flink-table-api-java-bridge` explicitly; both are `provided`
+    in flink-connector-jdbc-core and were previously missing from the test classpath
+-   Remove the unused `mockito-core` test dependency
+-   Fix the `scm` connection protocol and drop the retired OSSRH `distributionManagement` block
+
 ## [0.3.0] - 2025-08-08
 
 -   Upgrade to Flink 2.0
