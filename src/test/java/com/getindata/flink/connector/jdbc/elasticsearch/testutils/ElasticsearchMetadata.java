@@ -55,7 +55,7 @@ public class ElasticsearchMetadata implements DatabaseMetadata {
 
     @Override
     public String getJdbcUrlWithCredentials() {
-        return String.format("%s&user=%s&password=%s", getJdbcUrl(), getUsername(), getPassword());
+        return String.format("%s/?user=%s&password=%s", getJdbcUrl(), getUsername(), getPassword());
     }
 
     @Override

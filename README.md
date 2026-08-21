@@ -2,6 +2,30 @@
 
 This module contains Flink JDBC dialect for Elasticsearch.
 
+## Requirements
+
+| Component              | Version                    |
+|------------------------|----------------------------|
+| Apache Flink           | 2.2.1                      |
+| flink-connector-jdbc   | 4.1.0-2.2                  |
+| Java                   | 17 or newer                |
+| Elasticsearch          | 8.x (tested against 8.19)  |
+
+### Runtime dependencies
+
+The Flink distribution does **not** bundle any JDBC connector, so alongside this dialect the
+following jars have to be added to `FLINK_HOME/lib` (or shipped with the job):
+
+- `flink-connector-jdbc-core-4.1.0-2.2.jar` — the JDBC connector itself
+- `x-pack-sql-jdbc-<version>.jar` — the Elasticsearch JDBC driver, declared here as `provided`
+
+`flink-connector-base` and `flink-table-api-java-bridge` are required at runtime as well, but they
+are already part of the Flink distribution (`lib/flink-dist-*.jar` and
+`lib/flink-table-api-java-uber-*.jar`), which is why this project declares them as `provided`.
+
+> The Elasticsearch SQL/JDBC interface is only available under a Platinum or Enterprise license, or
+> under a trial license.
+
 ## Elasticsearch Catalog
 
 This is an implementation of
