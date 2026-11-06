@@ -21,8 +21,6 @@ import org.junit.jupiter.api.Test;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
-import java.util.Arrays;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -57,11 +55,10 @@ class ElasticsearchDynamicTableFactoryTest {
         ElasticsearchRowDataLookupFunction function = lookupFunction(source, 0);
 
         assertThat(function.getQuery())
-                .isEqualTo(
-                        "SELECT \"order.details.referenceId\", "
-                                + "\"order.details.attributes.productName\" "
-                                + "FROM \"idx-orders.details-test\" "
-                                + "WHERE \"order.details.referenceId\" = ?");
+                .isEqualTo("""
+                        SELECT "order.details.referenceId", "order.details.attributes.productName" \
+                        FROM "idx-orders.details-test" \
+                        WHERE "order.details.referenceId" = ?""");
     }
 
     @Test
@@ -73,10 +70,10 @@ class ElasticsearchDynamicTableFactoryTest {
         ElasticsearchRowDataLookupFunction function = lookupFunction(source, 0);
 
         assertThat(function.getQuery())
-                .isEqualTo(
-                        "SELECT \"order.details.attributes.productName\" "
-                                + "FROM \"idx-orders.details-test\" "
-                                + "WHERE \"order.details.attributes.productName\" = ?");
+                .isEqualTo("""
+                        SELECT "order.details.attributes.productName" \
+                        FROM "idx-orders.details-test" \
+                        WHERE "order.details.attributes.productName" = ?""");
     }
 
     @Test
@@ -125,7 +122,7 @@ class ElasticsearchDynamicTableFactoryTest {
         JdbcDynamicTableSource jdbcSource =
                 (JdbcDynamicTableSource)
                         FactoryMocks.createTableSource(SCHEMA, jdbcOptions());
-        List<ResolvedExpression> filters = Collections.singletonList(productNameEquals("Product X"));
+        List<ResolvedExpression> filters = List.of(productNameEquals("Product X"));
 
         SupportsFilterPushDown.Result result = source.applyFilters(filters);
         SupportsFilterPushDown.Result jdbcResult = jdbcSource.applyFilters(filters);
@@ -142,7 +139,7 @@ class ElasticsearchDynamicTableFactoryTest {
                 DataTypes.ROW(
                         DataTypes.FIELD(REFERENCE_ID, DataTypes.STRING()),
                         DataTypes.FIELD(PRODUCT_NAME, DataTypes.STRING())));
-        source.applyFilters(Arrays.asList(productNameEquals("Product X"), productNameEquals("Product Y")));
+        source.applyFilters(List.of(productNameEquals("Product X"), productNameEquals("Product Y")));
         source.applyLimit(10);
 
         DynamicTableSource copy = source.copy();
@@ -175,10 +172,10 @@ class ElasticsearchDynamicTableFactoryTest {
         ElasticsearchRowDataLookupFunction function = lookupFunction(source, 1);
 
         assertThat(function.getQuery())
-                .isEqualTo(
-                        "SELECT \"order.details.referenceId\", \"geo:loc\" "
-                                + "FROM \"idx-orders.details-test\" "
-                                + "WHERE \"geo:loc\" = ?");
+                .isEqualTo("""
+                        SELECT "order.details.referenceId", "geo:loc" \
+                        FROM "idx-orders.details-test" \
+                        WHERE "geo:loc" = ?""");
     }
 
     @Test
@@ -191,10 +188,10 @@ class ElasticsearchDynamicTableFactoryTest {
         ElasticsearchDynamicTableSource source =
                 (ElasticsearchDynamicTableSource) FactoryMocks.createTableSource(schema, options());
         source.applyFilters(
-                Collections.singletonList(
+                List.of(
                         CallExpression.permanent(
                                 BuiltInFunctionDefinitions.EQUALS,
-                                Arrays.asList(
+                                List.of(
                                         new FieldReferenceExpression(
                                                 "what?", DataTypes.STRING(), 0, 1),
                                         new ValueLiteralExpression("x")),
@@ -209,13 +206,13 @@ class ElasticsearchDynamicTableFactoryTest {
                 lookupFunction(source, 0).prepareStatement(connection);
 
         assertThat(statement).isInstanceOf(PositionalPreparedStatement.class);
+        // the visitor and the lookup function both add parentheses
         verify(connection)
-                .prepareStatement(
-                        "SELECT \"order.details.referenceId\" "
-                                + "FROM \"idx-orders.details-test\" "
-                                + "WHERE \"order.details.referenceId\" = ? "
-                                // the visitor and the lookup function both add parentheses
-                                + "AND ((\"what?\" = ?))");
+                .prepareStatement("""
+                        SELECT "order.details.referenceId" \
+                        FROM "idx-orders.details-test" \
+                        WHERE "order.details.referenceId" = ? \
+                        AND (("what?" = ?))""");
     }
 
     @Test
@@ -226,11 +223,10 @@ class ElasticsearchDynamicTableFactoryTest {
         ElasticsearchRowDataLookupFunction function = lookupFunction(createSource(options), 0);
 
         assertThat(function.getQuery())
-                .isEqualTo(
-                        "SELECT \"order.details.referenceId\", "
-                                + "\"order.details.attributes.productName\" "
-                                + "FROM \"remote:idx-orders\" "
-                                + "WHERE \"order.details.referenceId\" = ?");
+                .isEqualTo("""
+                        SELECT "order.details.referenceId", "order.details.attributes.productName" \
+                        FROM "remote:idx-orders" \
+                        WHERE "order.details.referenceId" = ?""");
     }
 
     @Test
@@ -245,9 +241,9 @@ class ElasticsearchDynamicTableFactoryTest {
                         ((LookupFunctionProvider) provider).createLookupFunction();
 
         assertThat(function.getQuery())
-                .endsWith(
-                        "WHERE \"order.details.attributes.productName\" = ? "
-                                + "AND \"order.details.referenceId\" = ?");
+                .endsWith("""
+                        WHERE "order.details.attributes.productName" = ? \
+                        AND "order.details.referenceId" = ?""");
     }
 
     private static ElasticsearchRowDataLookupFunction lookupFunction(
@@ -266,7 +262,7 @@ class ElasticsearchDynamicTableFactoryTest {
     private static ResolvedExpression productNameEquals(String value) {
         return CallExpression.permanent(
                 BuiltInFunctionDefinitions.EQUALS,
-                Arrays.asList(
+                List.of(
                         new FieldReferenceExpression(PRODUCT_NAME, DataTypes.STRING(), 0, 1),
                         new ValueLiteralExpression(value)),
                 DataTypes.BOOLEAN());

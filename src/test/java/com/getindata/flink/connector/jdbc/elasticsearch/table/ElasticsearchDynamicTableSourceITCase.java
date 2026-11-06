@@ -367,55 +367,60 @@ public class ElasticsearchDynamicTableSourceITCase extends AbstractTestBase
         String indexName = "lookup_special_character_columns";
         client.createIndex(
                 indexName,
-                "{\"mappings\": {\"properties\": {"
-                        + "\"order.details.referenceId\": {\"type\": \"keyword\"},"
-                        + "\"user.name\": {\"type\": \"keyword\"},"
-                        + "\"order.details.attributes.productName\": {\"type\": \"keyword\"},"
-                        + "\"@version\": {\"type\": \"integer\"},"
-                        + "\"geo:loc\": {\"type\": \"keyword\"},"
-                        + "\"a\\\"b\": {\"type\": \"keyword\"},"
-                        + "\"what?\": {\"type\": \"keyword\"}"
-                        + "}}}");
+                """
+                {"mappings": {"properties": {
+                  "order.details.referenceId": {"type": "keyword"},
+                  "user.name": {"type": "keyword"},
+                  "order.details.attributes.productName": {"type": "keyword"},
+                  "@version": {"type": "integer"},
+                  "geo:loc": {"type": "keyword"},
+                  "a\\"b": {"type": "keyword"},
+                  "what?": {"type": "keyword"}
+                }}}""");
         try {
+            // bulk API: one JSON document per line
             client.addDataBulk(
                     indexName,
-                    "{\"index\": {\"_id\": \"1\"}}\n"
-                            + "{\"order\": {\"details\": {\"referenceId\": \"ref-aaaa\","
-                            + " \"attributes\": {\"productName\": \"Product One\"}}},"
-                            + " \"user\": {\"name\": \"alice\"}, \"@version\": 1,"
-                            + " \"geo:loc\": \"loc-1\", \"a\\\"b\": \"loc-1\", \"what?\": \"yes\"}\n"
-                            + "{\"index\": {\"_id\": \"2\"}}\n"
-                            + "{\"order.details.referenceId\": \"ref-bbbb\","
-                            + " \"order.details.attributes.productName\": \"Product Two\","
-                            + " \"user.name\": \"bob\", \"@version\": 2,"
-                            + " \"geo:loc\": \"loc-2\", \"a\\\"b\": \"loc-2\", \"what?\": \"yes\"}\n"
-                            + "{\"index\": {\"_id\": \"3\"}}\n"
-                            + "{\"order.details.referenceId\": \"ref-bbbb\","
-                            + " \"order.details.attributes.productName\": \"Product Three\","
-                            + " \"user.name\": \"carol\", \"@version\": 3,"
-                            + " \"geo:loc\": \"loc-2\", \"a\\\"b\": \"loc-2\", \"what?\": \"no\"}\n");
+                    """
+                    {"index": {"_id": "1"}}
+                    {"order": {"details": {"referenceId": "ref-aaaa", \
+                    "attributes": {"productName": "Product One"}}}, \
+                    "user": {"name": "alice"}, "@version": 1, \
+                    "geo:loc": "loc-1", "a\\"b": "loc-1", "what?": "yes"}
+                    {"index": {"_id": "2"}}
+                    {"order.details.referenceId": "ref-bbbb", \
+                    "order.details.attributes.productName": "Product Two", \
+                    "user.name": "bob", "@version": 2, \
+                    "geo:loc": "loc-2", "a\\"b": "loc-2", "what?": "yes"}
+                    {"index": {"_id": "3"}}
+                    {"order.details.referenceId": "ref-bbbb", \
+                    "order.details.attributes.productName": "Product Three", \
+                    "user.name": "carol", "@version": 3, \
+                    "geo:loc": "loc-2", "a\\"b": "loc-2", "what?": "no"}
+                    """);
 
             String cachingOptions =
                     caching == Caching.ENABLE_CACHE
                             ? ", 'lookup.cache' = 'PARTIAL', 'lookup.partial-cache.max-rows' = '100'"
                             : "";
             tEnv.executeSql(
-                    String.format(
-                            "CREATE TABLE es_lookup ("
-                                    + " `order.details.referenceId` STRING,"
-                                    + " `user.name` STRING,"
-                                    + " `order.details.attributes.productName` STRING,"
-                                    + " `@version` INT,"
-                                    + " `geo:loc` STRING,"
-                                    + " `a\"b` STRING,"
-                                    + " `what?` STRING"
-                                    + ") WITH ("
-                                    + " 'connector' = '%s',"
-                                    + " 'url' = '%s',"
-                                    + " 'table-name' = '%s',"
-                                    + " 'username' = '%s',"
-                                    + " 'password' = '%s'"
-                                    + "%s)",
+                    """
+                    CREATE TABLE es_lookup (
+                      `order.details.referenceId` STRING,
+                      `user.name` STRING,
+                      `order.details.attributes.productName` STRING,
+                      `@version` INT,
+                      `geo:loc` STRING,
+                      `a"b` STRING,
+                      `what?` STRING
+                    ) WITH (
+                      'connector' = '%s',
+                      'url' = '%s',
+                      'table-name' = '%s',
+                      'username' = '%s',
+                      'password' = '%s'
+                      %s
+                    )""".formatted(
                             ElasticsearchDynamicTableFactory.IDENTIFIER,
                             getMetadata().getJdbcUrl(),
                             indexName,
@@ -425,7 +430,7 @@ public class ElasticsearchDynamicTableSourceITCase extends AbstractTestBase
 
             String dataId =
                     TestValuesTableFactory.registerData(
-                            Arrays.asList(
+                            List.of(
                                     Row.of("REF-AAAA", "alice", "loc-1", 1),
                                     Row.of("REF-BBBB", "bob", "loc-2", 2),
                                     Row.of("REF-BBBB", "carol", "loc-2", 3),
@@ -434,18 +439,17 @@ public class ElasticsearchDynamicTableSourceITCase extends AbstractTestBase
                                     // null lookup keys
                                     Row.of(null, "eve", null, null)));
             tEnv.executeSql(
-                    String.format(
-                            "CREATE TABLE events ("
-                                    + " `event.ReferenceId` STRING,"
-                                    + " `user` STRING,"
-                                    + " `location` STRING,"
-                                    + " `version` INT,"
-                                    + " `proctime` AS PROCTIME()"
-                                    + ") WITH ("
-                                    + " 'connector' = 'values',"
-                                    + " 'data-id' = '%s'"
-                                    + ")",
-                            dataId));
+                    """
+                    CREATE TABLE events (
+                      `event.ReferenceId` STRING,
+                      `user` STRING,
+                      `location` STRING,
+                      `version` INT,
+                      `proctime` AS PROCTIME()
+                    ) WITH (
+                      'connector' = 'values',
+                      'data-id' = '%s'
+                    )""".formatted(dataId));
 
             if (caching == Caching.ENABLE_CACHE) {
                 LookupCacheManager.keepCacheOnRelease(true);
@@ -454,12 +458,12 @@ public class ElasticsearchDynamicTableSourceITCase extends AbstractTestBase
                 // single dotted key, function applied on the probe side
                 assertThat(
                                 executeQuery(
-                                        "SELECT A.`event.ReferenceId`,"
-                                                + " D.`order.details.attributes.productName`"
-                                                + " FROM events AS A"
-                                                + " JOIN es_lookup FOR SYSTEM_TIME AS OF A.proctime AS D"
-                                                + " ON D.`order.details.referenceId`"
-                                                + " = LOWER(A.`event.ReferenceId`)"))
+                                        """
+                                        SELECT A.`event.ReferenceId`, D.`order.details.attributes.productName`
+                                        FROM events AS A
+                                        JOIN es_lookup FOR SYSTEM_TIME AS OF A.proctime AS D
+                                          ON D.`order.details.referenceId` = LOWER(A.`event.ReferenceId`)
+                                        """))
                         .containsExactlyInAnyOrder(
                                 Row.of("REF-AAAA", "Product One"),
                                 Row.of("REF-BBBB", "Product Two"),
@@ -470,22 +474,25 @@ public class ElasticsearchDynamicTableSourceITCase extends AbstractTestBase
                 // two keys with special characters and a range filter on the lookup table
                 assertThat(
                                 executeQuery(
-                                        "SELECT A.`user`, D.`@version`"
-                                                + " FROM events AS A"
-                                                + " JOIN es_lookup FOR SYSTEM_TIME AS OF A.proctime AS D"
-                                                + " ON D.`order.details.referenceId`"
-                                                + " = LOWER(A.`event.ReferenceId`)"
-                                                + " AND D.`user.name` = A.`user`"
-                                                + " WHERE D.`@version` > 1"))
+                                        """
+                                        SELECT A.`user`, D.`@version`
+                                        FROM events AS A
+                                        JOIN es_lookup FOR SYSTEM_TIME AS OF A.proctime AS D
+                                          ON D.`order.details.referenceId` = LOWER(A.`event.ReferenceId`)
+                                          AND D.`user.name` = A.`user`
+                                        WHERE D.`@version` > 1
+                                        """))
                         .containsExactlyInAnyOrder(Row.of("bob", 2), Row.of("carol", 3));
 
                 // key with ':' and a selected column with '?'
                 assertThat(
                                 executeQuery(
-                                        "SELECT A.`user`, D.`what?`"
-                                                + " FROM events AS A"
-                                                + " JOIN es_lookup FOR SYSTEM_TIME AS OF A.proctime AS D"
-                                                + " ON D.`geo:loc` = A.`location`"))
+                                        """
+                                        SELECT A.`user`, D.`what?`
+                                        FROM events AS A
+                                        JOIN es_lookup FOR SYSTEM_TIME AS OF A.proctime AS D
+                                          ON D.`geo:loc` = A.`location`
+                                        """))
                         .containsExactlyInAnyOrder(
                                 Row.of("alice", "yes"),
                                 Row.of("bob", "yes"),
@@ -497,13 +504,14 @@ public class ElasticsearchDynamicTableSourceITCase extends AbstractTestBase
                 // key parameters must be bound before the filter parameter
                 assertThat(
                                 executeQuery(
-                                        "SELECT A.`user`, D.`order.details.attributes.productName`"
-                                                + " FROM events AS A"
-                                                + " JOIN es_lookup FOR SYSTEM_TIME AS OF A.proctime AS D"
-                                                + " ON D.`geo:loc` = A.`location`"
-                                                + " AND D.`order.details.referenceId`"
-                                                + " = LOWER(A.`event.ReferenceId`)"
-                                                + " WHERE D.`what?` <> 'no'"))
+                                        """
+                                        SELECT A.`user`, D.`order.details.attributes.productName`
+                                        FROM events AS A
+                                        JOIN es_lookup FOR SYSTEM_TIME AS OF A.proctime AS D
+                                          ON D.`geo:loc` = A.`location`
+                                          AND D.`order.details.referenceId` = LOWER(A.`event.ReferenceId`)
+                                        WHERE D.`what?` <> 'no'
+                                        """))
                         .containsExactlyInAnyOrder(
                                 Row.of("alice", "Product One"),
                                 Row.of("bob", "Product Two"),
@@ -512,21 +520,25 @@ public class ElasticsearchDynamicTableSourceITCase extends AbstractTestBase
                 // INT key followed by two filters: filter parameters keep their order
                 assertThat(
                                 executeQuery(
-                                        "SELECT A.`user`, D.`what?`, D.`geo:loc`"
-                                                + " FROM events AS A"
-                                                + " JOIN es_lookup FOR SYSTEM_TIME AS OF A.proctime AS D"
-                                                + " ON D.`@version` = A.`version`"
-                                                + " WHERE D.`what?` <> 'yes' AND D.`@version` < 10"))
+                                        """
+                                        SELECT A.`user`, D.`what?`, D.`geo:loc`
+                                        FROM events AS A
+                                        JOIN es_lookup FOR SYSTEM_TIME AS OF A.proctime AS D
+                                          ON D.`@version` = A.`version`
+                                        WHERE D.`what?` <> 'yes' AND D.`@version` < 10
+                                        """))
                         .containsExactly(Row.of("carol", "no", "loc-2"));
 
                 // key with a double quote, escaped by the dialect as ""
                 assertThat(
                                 executeQuery(
-                                        "SELECT A.`user`, D.`what?`, D.`a\"b`"
-                                                + " FROM events AS A"
-                                                + " JOIN es_lookup FOR SYSTEM_TIME AS OF A.proctime AS D"
-                                                + " ON D.`a\"b` = A.`location`"
-                                                + " WHERE D.`what?` <> 'no'"))
+                                        """
+                                        SELECT A.`user`, D.`what?`, D.`a"b`
+                                        FROM events AS A
+                                        JOIN es_lookup FOR SYSTEM_TIME AS OF A.proctime AS D
+                                          ON D.`a"b` = A.`location`
+                                        WHERE D.`what?` <> 'no'
+                                        """))
                         .containsExactlyInAnyOrder(
                                 Row.of("alice", "yes", "loc-1"),
                                 Row.of("bob", "yes", "loc-2"),
@@ -535,18 +547,23 @@ public class ElasticsearchDynamicTableSourceITCase extends AbstractTestBase
                 // scan with a pushed down filter on a column with a double quote
                 assertThat(
                                 executeQuery(
-                                        "SELECT `order.details.attributes.productName`, `a\"b`"
-                                                + " FROM es_lookup WHERE `a\"b` = 'loc-2'"))
+                                        """
+                                        SELECT `order.details.attributes.productName`, `a"b`
+                                        FROM es_lookup
+                                        WHERE `a"b` = 'loc-2'
+                                        """))
                         .containsExactlyInAnyOrder(
                                 Row.of("Product Two", "loc-2"), Row.of("Product Three", "loc-2"));
 
                 // left join: rows without a match and with null keys are kept
                 assertThat(
                                 executeQuery(
-                                        "SELECT A.`user`, D.`what?`"
-                                                + " FROM events AS A"
-                                                + " LEFT JOIN es_lookup FOR SYSTEM_TIME AS OF A.proctime AS D"
-                                                + " ON D.`geo:loc` = A.`location`"))
+                                        """
+                                        SELECT A.`user`, D.`what?`
+                                        FROM events AS A
+                                        LEFT JOIN es_lookup FOR SYSTEM_TIME AS OF A.proctime AS D
+                                          ON D.`geo:loc` = A.`location`
+                                        """))
                         .containsExactlyInAnyOrder(
                                 Row.of("alice", "yes"),
                                 Row.of("bob", "yes"),

@@ -41,7 +41,6 @@ import javax.annotation.Nullable;
 
 import java.io.Serializable;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 
@@ -61,6 +60,9 @@ public class ElasticsearchDynamicTableSource extends JdbcDynamicTableSource {
     private final List<ResolvedExpression> acceptedFilters = new ArrayList<>();
     private final List<String> resolvedPredicates = new ArrayList<>();
     private Serializable[] pushdownParams = new Serializable[0];
+    // not part of equals/hashCode, as in the parent
+    @EqualsAndHashCode.Exclude
+    private final String tableIdentifier;
 
     public ElasticsearchDynamicTableSource(
             InternalJdbcConnectionOptions options,
@@ -68,19 +70,22 @@ public class ElasticsearchDynamicTableSource extends JdbcDynamicTableSource {
             int lookupMaxRetryTimes,
             @Nullable LookupCache cache,
             FilterHandlingPolicy filterHandlingPolicy,
-            DataType physicalRowDataType) {
+            DataType physicalRowDataType,
+            String tableIdentifier) {
         super(options,
             readOptions,
             lookupMaxRetryTimes,
             cache,
             filterHandlingPolicy,
-            physicalRowDataType);
+            physicalRowDataType,
+            tableIdentifier);
         this.options = options;
         this.readOptions = readOptions;
         this.lookupMaxRetryTimes = lookupMaxRetryTimes;
         this.cache = cache;
         this.filterHandlingPolicy = filterHandlingPolicy;
         this.physicalRowDataType = physicalRowDataType;
+        this.tableIdentifier = tableIdentifier;
     }
 
     @Override
@@ -101,8 +106,8 @@ public class ElasticsearchDynamicTableSource extends JdbcDynamicTableSource {
                         DataType.getFieldDataTypes(physicalRowDataType).toArray(new DataType[0]),
                         keyNames,
                         rowType,
-                        new ArrayList<>(resolvedPredicates),
-                        Arrays.copyOf(pushdownParams, pushdownParams.length));
+                        List.copyOf(resolvedPredicates),
+                        pushdownParams.clone());
         if (cache != null) {
             return PartialCachingLookupProvider.of(lookupFunction, cache);
         } else {
@@ -141,8 +146,7 @@ public class ElasticsearchDynamicTableSource extends JdbcDynamicTableSource {
 
     // copy JdbcDynamicTableSource#parseFilterToPredicate, private in the parent
     private Optional<ParameterizedPredicate> parseFilterToPredicate(ResolvedExpression filter) {
-        if (filter instanceof CallExpression) {
-            CallExpression callExp = (CallExpression) filter;
+        if (filter instanceof CallExpression callExp) {
             return callExp.accept(
                     new JdbcFilterPushdownPreparedStatementVisitor(
                             this.options.getDialect()::quoteIdentifier));
@@ -159,11 +163,12 @@ public class ElasticsearchDynamicTableSource extends JdbcDynamicTableSource {
                         lookupMaxRetryTimes,
                         cache,
                         filterHandlingPolicy,
-                        physicalRowDataType);
+                        physicalRowDataType,
+                        tableIdentifier);
         // The parent's push down state is private, so it is rebuilt by re-applying the same
         // abilities. Filters are referenced by name, so re-applying them after projection is safe.
         if (!acceptedFilters.isEmpty()) {
-            newSource.applyFilters(new ArrayList<>(acceptedFilters));
+            newSource.applyFilters(List.copyOf(acceptedFilters));
         }
         if (limit >= 0) {
             newSource.applyLimit(limit);

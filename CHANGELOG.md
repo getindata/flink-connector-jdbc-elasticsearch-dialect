@@ -8,7 +8,14 @@
     the new `elasticsearch-jdbc` connector, which accepts the same options as `jdbc`.
     Tables defined with DDL must use `'connector' = 'elasticsearch-jdbc'` to get the fix,
     `'connector' = 'jdbc'` still uses the upstream lookup.
--   Upgrade Testcontainers to 1.21.4 to support recent Docker versions
+-   The lookup function of `elasticsearch-jdbc` reports its source table to Flink lineage,
+    like the upstream `jdbc` lookup
+-   Escape double quotes in quoted identifiers (`a"b` → `"a""b"`), so columns containing `"`
+    work in scan, filter push down and lookup join
+-   Fix quoting of the catalog queries for the table schema and the scan partition bounds:
+    the upper bound used an unquoted column name and `"` in table or column names was not escaped
+-   Add the `lombok` dependency (`provided`), previously only configured as annotation processor
+-   Restore the `mockito-core` test dependency (5.23.0), used by the new unit tests
 
 ## [0.4.0] - 2026-08-21
 

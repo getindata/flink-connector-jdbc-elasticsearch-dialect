@@ -17,9 +17,16 @@ class PositionalPreparedStatement implements FieldNamedPreparedStatement {
 
     @NonNull
     private final PreparedStatement statement;
+    @NonNull
+    private final String query;
 
     private static int parameterIndex(int fieldIndex) {
         return fieldIndex + 1;
+    }
+
+    @Override
+    public String getQuery() {
+        return query;
     }
 
     @Override

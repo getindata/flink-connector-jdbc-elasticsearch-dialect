@@ -412,13 +412,13 @@ public class ElasticsearchCatalog extends CopiedAbstractJdbcCatalog {
 
     @VisibleForTesting
     static String tableMetadataQuery(String tableName) {
-        return format("SELECT * FROM %s LIMIT 0", DIALECT.quoteIdentifier(tableName));
+        return "SELECT * FROM %s LIMIT 0".formatted(DIALECT.quoteIdentifier(tableName));
     }
 
     @VisibleForTesting
     static String partitionNumberQuery(String tableName, String partitionCapacity) {
-        return format("SELECT CEIL(COUNT(*) / %s) FROM %s",
-                partitionCapacity, DIALECT.quoteIdentifier(tableName));
+        return "SELECT CEIL(COUNT(*) / %s) FROM %s"
+                .formatted(partitionCapacity, DIALECT.quoteIdentifier(tableName));
     }
 
     @VisibleForTesting
@@ -426,11 +426,15 @@ public class ElasticsearchCatalog extends CopiedAbstractJdbcCatalog {
         String column = DIALECT.quoteIdentifier(partitionColumn);
         String table = DIALECT.quoteIdentifier(tableName);
         if (isPartitionColumnTemporal) {
-            return format("SELECT COALESCE(MIN(%s), CURRENT_DATE) AS scanPartitionLowerBound, "
-                    + "DATE_ADD('days', 1, CURRENT_DATE) AS scanPartitionUpperBound FROM %s", column, table);
+            return """
+                    SELECT COALESCE(MIN(%s), CURRENT_DATE) AS scanPartitionLowerBound, \
+                    DATE_ADD('days', 1, CURRENT_DATE) AS scanPartitionUpperBound \
+                    FROM %s""".formatted(column, table);
         }
-        return format("SELECT MIN(%s) AS scanPartitionLowerBound, MAX(%s) AS scanPartitionUpperBound FROM %s",
-                column, column, table);
+        return """
+                SELECT MIN(%1$s) AS scanPartitionLowerBound, \
+                MAX(%1$s) AS scanPartitionUpperBound \
+                FROM %2$s""".formatted(column, table);
     }
 
     private int calculatePartitionNumberBasedOnPartitionSize(Connection conn, String tableName) {

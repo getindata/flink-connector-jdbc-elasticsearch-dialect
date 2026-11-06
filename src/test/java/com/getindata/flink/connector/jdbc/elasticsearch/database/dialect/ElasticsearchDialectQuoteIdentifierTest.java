@@ -14,16 +14,16 @@ class ElasticsearchDialectQuoteIdentifierTest {
     @CsvSource(
             delimiter = '|',
             quoteCharacter = '`',
-            value = {
-                "id                        | \"id\"",
-                "order.details.referenceId | \"order.details.referenceId\"",
-                "@timestamp                | \"@timestamp\"",
-                "geo:loc                   | \"geo:loc\"",
-                "what?                     | \"what?\"",
-                "it's                      | \"it's\"",
-                "`with space`              | \"with space\"",
-                "a\\b                      | \"a\\b\""
-            })
+            textBlock = """
+                id                        | "id"
+                order.details.referenceId | "order.details.referenceId"
+                @timestamp                | "@timestamp"
+                geo:loc                   | "geo:loc"
+                what?                     | "what?"
+                it's                      | "it's"
+                `with space`              | "with space"
+                a\\b                      | "a\\b"
+                """)
     void shouldQuoteIdentifierWithoutQuotes(String identifier, String expected) {
         assertThat(dialect.quoteIdentifier(identifier)).isEqualTo(expected);
     }
@@ -31,14 +31,14 @@ class ElasticsearchDialectQuoteIdentifierTest {
     @ParameterizedTest
     @CsvSource(
             delimiter = '|',
-            value = {
-                "a\"b        | \"a\"\"b\"",
-                "\"leading   | \"\"\"leading\"",
-                "trailing\"  | \"trailing\"\"\"",
-                "a\"\"b      | \"a\"\"\"\"b\"",
-                "\"          | \"\"\"\"",
-                "a\"b:c?d    | \"a\"\"b:c?d\""
-            })
+            textBlock = """
+                a"b        | "a""b"
+                "leading   | ""\"leading"
+                trailing"  | "trailing""\"
+                a""b       | "a""\""b"
+                "          | ""\""
+                a"b:c?d    | "a""b:c?d"
+                """)
     void shouldEscapeDoubleQuotesByDoublingThem(String identifier, String expected) {
         assertThat(dialect.quoteIdentifier(identifier)).isEqualTo(expected);
     }

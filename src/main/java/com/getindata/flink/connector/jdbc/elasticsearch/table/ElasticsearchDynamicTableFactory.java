@@ -68,13 +68,15 @@ public class ElasticsearchDynamicTableFactory extends JdbcDynamicTableFactory {
         super.createDynamicTableSource(context);
 
         final ReadableConfig config = FactoryUtil.createTableFactoryHelper(this, context).getOptions();
+        final String tableIdentifier = context.getObjectIdentifier().asSummaryString();
         return new ElasticsearchDynamicTableSource(
                 getJdbcOptions(config, context.getClassLoader()),
                 getJdbcReadOptions(config),
                 config.get(LookupOptions.MAX_RETRIES),
                 getLookupCache(config),
                 config.get(FILTER_HANDLING_POLICY),
-                context.getPhysicalRowDataType());
+                context.getPhysicalRowDataType(),
+                tableIdentifier);
     }
 
     // Copied from parent - private

@@ -22,9 +22,8 @@ import org.mockito.InOrder;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
-import java.util.Arrays;
-import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -51,10 +50,10 @@ class ElasticsearchDynamicTableSourceTest {
                     Column.physical(QUOTED, DataTypes.STRING()),
                     Column.physical(FLAG, DataTypes.BOOLEAN()));
 
-    private static final String LOOKUP_QUERY =
-            "SELECT \"order.details.referenceId\", \"order.details.attributes.productName\", "
-                    + "\"what?:x\", \"a\"\"b\", \"flag\" "
-                    + "FROM \"idx\" WHERE \"order.details.referenceId\" = ?";
+    private static final String LOOKUP_QUERY = """
+            SELECT "order.details.referenceId", "order.details.attributes.productName", \
+            "what?:x", "a""b", "flag" \
+            FROM "idx" WHERE "order.details.referenceId" = ?""";
 
     private Connection connection;
     private PreparedStatement preparedStatement;
@@ -71,7 +70,7 @@ class ElasticsearchDynamicTableSourceTest {
         ElasticsearchDynamicTableSource source = source();
 
         SupportsFilterPushDown.Result result =
-                source.applyFilters(Collections.singletonList(equalsFilter(PRODUCT_NAME, 1, "Product X")));
+                source.applyFilters(List.of(equalsFilter(PRODUCT_NAME, 1, "Product X")));
 
         assertThat(result.getAcceptedFilters()).hasSize(1);
         assertThat(result.getRemainingFilters()).isEmpty();
@@ -89,15 +88,15 @@ class ElasticsearchDynamicTableSourceTest {
         ResolvedExpression filter =
                 CallExpression.permanent(
                         BuiltInFunctionDefinitions.EQUALS,
-                        Arrays.asList(
+                        List.of(
                                 CallExpression.permanent(
                                         BuiltInFunctionDefinitions.UPPER,
-                                        Collections.singletonList(field(PRODUCT_NAME, 1)),
+                                        List.of(field(PRODUCT_NAME, 1)),
                                         DataTypes.STRING()),
                                 new ValueLiteralExpression("PRODUCT X")),
                         DataTypes.BOOLEAN());
 
-        SupportsFilterPushDown.Result result = source.applyFilters(Collections.singletonList(filter));
+        SupportsFilterPushDown.Result result = source.applyFilters(List.of(filter));
 
         assertThat(result.getAcceptedFilters()).isEmpty();
         assertThat(result.getRemainingFilters()).containsExactly(filter);
@@ -109,7 +108,7 @@ class ElasticsearchDynamicTableSourceTest {
         ElasticsearchDynamicTableSource source = source();
         ResolvedExpression filter = new FieldReferenceExpression(FLAG, DataTypes.BOOLEAN(), 0, 4);
 
-        SupportsFilterPushDown.Result result = source.applyFilters(Collections.singletonList(filter));
+        SupportsFilterPushDown.Result result = source.applyFilters(List.of(filter));
 
         assertThat(result.getAcceptedFilters()).isEmpty();
         assertThat(result.getRemainingFilters()).containsExactly(filter);
@@ -120,7 +119,7 @@ class ElasticsearchDynamicTableSourceTest {
     void shouldQuoteColumnWithSpecialCharactersAndKeepValueAsParameter() throws Exception {
         ElasticsearchDynamicTableSource source = source();
 
-        source.applyFilters(Collections.singletonList(equalsFilter(SPECIAL, 2, "a:b?")));
+        source.applyFilters(List.of(equalsFilter(SPECIAL, 2, "a:b?")));
 
         assertThat(lookupSql(source)).isEqualTo(LOOKUP_QUERY + " AND ((\"what?:x\" = ?))");
         bindKey(source);
@@ -131,7 +130,7 @@ class ElasticsearchDynamicTableSourceTest {
     void shouldEscapeDoubleQuoteInFilteredColumn() throws Exception {
         ElasticsearchDynamicTableSource source = source();
 
-        source.applyFilters(Collections.singletonList(equalsFilter(QUOTED, 3, "x\"y")));
+        source.applyFilters(List.of(equalsFilter(QUOTED, 3, "x\"y")));
 
         assertThat(lookupSql(source)).isEqualTo(LOOKUP_QUERY + " AND ((\"a\"\"b\" = ?))");
         bindKey(source);
@@ -143,17 +142,17 @@ class ElasticsearchDynamicTableSourceTest {
         ElasticsearchDynamicTableSource source = source();
 
         source.applyFilters(
-                Arrays.asList(
+                List.of(
                         equalsFilter(QUOTED, 3, "first"),
                         equalsFilter(PRODUCT_NAME, 1, "second"),
                         equalsFilter(SPECIAL, 2, "third")));
 
         assertThat(lookupSql(source))
-                .isEqualTo(
-                        LOOKUP_QUERY
-                                + " AND ((\"a\"\"b\" = ?))"
-                                + " AND ((\"order.details.attributes.productName\" = ?))"
-                                + " AND ((\"what?:x\" = ?))");
+                .isEqualTo("""
+                        %s \
+                        AND (("a""b" = ?)) \
+                        AND (("order.details.attributes.productName" = ?)) \
+                        AND (("what?:x" = ?))""".formatted(LOOKUP_QUERY));
         bindKey(source);
         InOrder order = inOrder(preparedStatement);
         order.verify(preparedStatement).setString(1, "ref-1");
@@ -166,7 +165,7 @@ class ElasticsearchDynamicTableSourceTest {
     void copyShouldKeepPushedDownPredicatesAndParameters() throws Exception {
         ElasticsearchDynamicTableSource source = source();
         source.applyFilters(
-                Arrays.asList(equalsFilter(QUOTED, 3, "first"), equalsFilter(SPECIAL, 2, "second")));
+                List.of(equalsFilter(QUOTED, 3, "first"), equalsFilter(SPECIAL, 2, "second")));
 
         ElasticsearchDynamicTableSource copy = (ElasticsearchDynamicTableSource) source.copy();
 
@@ -202,7 +201,7 @@ class ElasticsearchDynamicTableSourceTest {
     private static ResolvedExpression equalsFilter(String column, int index, String value) {
         return CallExpression.permanent(
                 BuiltInFunctionDefinitions.EQUALS,
-                Arrays.asList(field(column, index), new ValueLiteralExpression(value)),
+                List.of(field(column, index), new ValueLiteralExpression(value)),
                 DataTypes.BOOLEAN());
     }
 

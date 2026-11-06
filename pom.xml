@@ -59,6 +59,7 @@
     <assertj.version>3.27.7</assertj.version>
     <junit.version>5.14.4</junit.version>
     <logback.version>1.5.38</logback.version>
+    <mockito.version>5.23.0</mockito.version>
     <okhttp.version>4.12.0</okhttp.version>
     <slf4j-api.version>2.0.18</slf4j-api.version>
     <testcontainers.version>2.0.5</testcontainers.version>
@@ -277,7 +278,20 @@
       <version>${slf4j-api.version}</version>
     </dependency>
 
+    <dependency>
+      <groupId>org.projectlombok</groupId>
+      <artifactId>lombok</artifactId>
+      <version>${lombok.version}</version>
+      <scope>provided</scope>
+    </dependency>
+
     <!-- Test dependencies -->
+    <dependency>
+      <groupId>org.mockito</groupId>
+      <artifactId>mockito-core</artifactId>
+      <version>${mockito.version}</version>
+      <scope>test</scope>
+    </dependency>
     <dependency>
       <groupId>org.apache.flink</groupId>
       <artifactId>flink-connector-jdbc-core</artifactId>

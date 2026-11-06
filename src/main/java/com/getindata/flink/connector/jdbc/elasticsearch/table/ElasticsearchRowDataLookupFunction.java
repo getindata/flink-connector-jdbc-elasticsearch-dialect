@@ -23,18 +23,26 @@ import lombok.Getter;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.flink.annotation.VisibleForTesting;
+import org.apache.flink.api.connector.source.Boundedness;
 import org.apache.flink.connector.jdbc.core.database.dialect.JdbcDialect;
 import org.apache.flink.connector.jdbc.core.database.dialect.JdbcDialectConverter;
 import org.apache.flink.connector.jdbc.datasource.connections.JdbcConnectionProvider;
 import org.apache.flink.connector.jdbc.datasource.connections.SimpleJdbcConnectionProvider;
 import org.apache.flink.connector.jdbc.internal.options.InternalJdbcConnectionOptions;
+import org.apache.flink.connector.jdbc.lineage.DefaultTypeDatasetFacet;
+import org.apache.flink.connector.jdbc.lineage.LineageUtils;
 import org.apache.flink.connector.jdbc.statement.FieldNamedPreparedStatement;
+import org.apache.flink.streaming.api.lineage.LineageDataset;
+import org.apache.flink.streaming.api.lineage.LineageVertex;
+import org.apache.flink.streaming.api.lineage.LineageVertexProvider;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.functions.FunctionContext;
 import org.apache.flink.table.functions.LookupFunction;
 import org.apache.flink.table.types.DataType;
 import org.apache.flink.table.types.logical.LogicalType;
 import org.apache.flink.table.types.logical.RowType;
+import org.apache.flink.table.types.utils.LegacyTypeInfoDataTypeConverter;
+import org.apache.flink.table.types.utils.TypeConversions;
 
 import java.io.Serializable;
 import java.sql.Connection;
@@ -45,6 +53,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 import static org.apache.flink.util.Preconditions.checkArgument;
@@ -56,7 +65,7 @@ import static org.apache.flink.util.Preconditions.checkArgument;
  * Each method is marked as copied, modified or new.
  */
 @Slf4j
-public class ElasticsearchRowDataLookupFunction extends LookupFunction {
+public class ElasticsearchRowDataLookupFunction extends LookupFunction implements LineageVertexProvider {
 
     private static final long serialVersionUID = 1L;
 
@@ -71,6 +80,7 @@ public class ElasticsearchRowDataLookupFunction extends LookupFunction {
 
     private final List<String> resolvedPredicates;
     private final Serializable[] pushdownParams;
+    private final RowType producedType;
 
     private transient FieldNamedPreparedStatement statement;
 
@@ -95,8 +105,9 @@ public class ElasticsearchRowDataLookupFunction extends LookupFunction {
         this.numberOfKeys = keyNames.length;
         this.query = buildLookupQuery(jdbcDialect, options.getTableName(), fieldNames, keyNames);
         this.jdbcDialectConverter = jdbcDialect.getRowConverter(rowType);
-        this.lookupKeyRowConverter = jdbcDialect.getRowConverter(RowType.of(
-                Arrays.stream(keyTypes).map(DataType::getLogicalType).toArray(LogicalType[]::new)));
+        this.producedType = RowType.of(
+                Arrays.stream(keyTypes).map(DataType::getLogicalType).toArray(LogicalType[]::new));
+        this.lookupKeyRowConverter = jdbcDialect.getRowConverter(producedType);
         this.resolvedPredicates = resolvedPredicates;
         this.pushdownParams = pushdownParams;
     }
@@ -111,14 +122,14 @@ public class ElasticsearchRowDataLookupFunction extends LookupFunction {
                 Arrays.stream(selectFields)
                         .map(dialect::quoteIdentifier)
                         .collect(Collectors.joining(", "));
-        String conditions = Arrays.stream(keyNames)
-                .map(keyName -> dialect.quoteIdentifier(keyName) + " = ?")
-                .collect(Collectors.joining(" AND "));
-        return "SELECT "
-                + selectExpressions
-                + " FROM "
-                + dialect.quoteIdentifier(tableName)
-                + (keyNames.length > 0 ? " WHERE " + conditions : "");
+        String conditions =
+                Arrays.stream(keyNames)
+                        .map(keyName -> dialect.quoteIdentifier(keyName) + " = ?")
+                        .collect(Collectors.joining(" AND "));
+        return "SELECT %s FROM %s%s".formatted(
+                selectExpressions,
+                dialect.quoteIdentifier(tableName),
+                keyNames.length > 0 ? " WHERE " + conditions : "");
     }
 
     // copy JdbcRowDataLookupFunction#open
@@ -200,19 +211,15 @@ public class ElasticsearchRowDataLookupFunction extends LookupFunction {
     // prepared directly with positional parameters, without FieldNamedPreparedStatement parsing.
     @VisibleForTesting
     FieldNamedPreparedStatement prepareStatement(Connection dbConn) throws SQLException {
-        String additionalPredicates = "";
+        String sql = query;
         if (!resolvedPredicates.isEmpty()) {
             String joinedConditions =
                     resolvedPredicates.stream()
-                            .map(pred -> String.format("(%s)", pred))
+                            .map(predicate -> "(%s)".formatted(predicate))
                             .collect(Collectors.joining(" AND "));
-            if (numberOfKeys == 0) {
-                additionalPredicates = " WHERE " + joinedConditions;
-            } else {
-                additionalPredicates = " AND " + joinedConditions;
-            }
+            sql += (numberOfKeys == 0 ? " WHERE " : " AND ") + joinedConditions;
         }
-        return new PositionalPreparedStatement(dbConn.prepareStatement(query + additionalPredicates));
+        return new PositionalPreparedStatement(dbConn.prepareStatement(sql), sql);
     }
 
     // copy JdbcRowDataLookupFunction#close
@@ -229,5 +236,21 @@ public class ElasticsearchRowDataLookupFunction extends LookupFunction {
         }
 
         connectionProvider.closeConnection();
+    }
+
+    // copy JdbcRowDataLookupFunction#getLineageVertex
+    @Override
+    public LineageVertex getLineageVertex() {
+        DefaultTypeDatasetFacet defaultTypeDatasetFacet =
+                new DefaultTypeDatasetFacet(
+                        LegacyTypeInfoDataTypeConverter.toLegacyTypeInfo(
+                                TypeConversions.fromLogicalToDataType(producedType)));
+        Optional<String> nameOpt = LineageUtils.tableNameOf(query, true);
+        String namespace = LineageUtils.namespaceOf(connectionProvider);
+        LineageDataset dataset =
+                LineageUtils.datasetOf(
+                        nameOpt.orElse(""), namespace, Arrays.asList(defaultTypeDatasetFacet));
+        return LineageUtils.sourceLineageVertexOf(
+                Boundedness.BOUNDED, Collections.singleton(dataset));
     }
 }

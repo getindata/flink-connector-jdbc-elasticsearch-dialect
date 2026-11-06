@@ -22,13 +22,15 @@ import static org.mockito.Mockito.when;
 
 class PositionalPreparedStatementTest {
 
+    private static final String QUERY = "SELECT \"geo:loc\" FROM \"idx\" WHERE \"what?\" = ?";
+
     private PreparedStatement delegate;
     private PositionalPreparedStatement statement;
 
     @BeforeEach
     void setUp() {
         delegate = mock(PreparedStatement.class);
-        statement = new PositionalPreparedStatement(delegate);
+        statement = new PositionalPreparedStatement(delegate, QUERY);
     }
 
     @Test
@@ -116,8 +118,20 @@ class PositionalPreparedStatementTest {
     }
 
     @Test
+    void shouldReturnQueryWithoutTouchingDelegate() {
+        assertThat(statement.getQuery()).isEqualTo(QUERY);
+        verifyNoMoreInteractions(delegate);
+    }
+
+    @Test
     void shouldRejectNullDelegate() {
-        assertThatThrownBy(() -> new PositionalPreparedStatement(null))
+        assertThatThrownBy(() -> new PositionalPreparedStatement(null, QUERY))
+                .isInstanceOf(NullPointerException.class);
+    }
+
+    @Test
+    void shouldRejectNullQuery() {
+        assertThatThrownBy(() -> new PositionalPreparedStatement(delegate, null))
                 .isInstanceOf(NullPointerException.class);
     }
 }

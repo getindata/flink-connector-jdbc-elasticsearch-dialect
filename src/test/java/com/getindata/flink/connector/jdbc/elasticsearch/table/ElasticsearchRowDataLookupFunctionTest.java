@@ -4,6 +4,7 @@ import com.getindata.flink.connector.jdbc.elasticsearch.database.dialect.Elastic
 import org.apache.flink.connector.jdbc.internal.options.InternalJdbcConnectionOptions;
 import org.apache.flink.connector.jdbc.statement.FieldNamedPreparedStatement;
 import org.apache.flink.connector.jdbc.statement.FieldNamedPreparedStatementImpl;
+import org.apache.flink.streaming.api.lineage.LineageVertex;
 import org.apache.flink.table.api.DataTypes;
 import org.apache.flink.table.data.GenericRowData;
 import org.apache.flink.table.data.StringData;
@@ -22,8 +23,6 @@ import java.sql.PreparedStatement;
 import java.sql.Timestamp;
 import java.sql.Types;
 import java.time.LocalDateTime;
-import java.util.Arrays;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -72,12 +71,11 @@ class ElasticsearchRowDataLookupFunctionTest {
                         new String[] {REFERENCE_ID, TIMESTAMP});
 
         assertThat(query)
-                .isEqualTo(
-                        "SELECT \"order.details.referenceId\", "
-                                + "\"order.details.attributes.productName\", \"@timestamp\" "
-                                + "FROM \"idx-orders.details-test\" "
-                                + "WHERE \"order.details.referenceId\" = ? "
-                                + "AND \"@timestamp\" = ?");
+                .isEqualTo("""
+                        SELECT "order.details.referenceId", "order.details.attributes.productName", "@timestamp" \
+                        FROM "idx-orders.details-test" \
+                        WHERE "order.details.referenceId" = ? \
+                        AND "@timestamp" = ?""");
     }
 
     @Test
@@ -109,10 +107,8 @@ class ElasticsearchRowDataLookupFunctionTest {
                         dialect, "idx", new String[] {columnName}, new String[] {columnName});
 
         assertThat(query)
-                .isEqualTo(
-                        String.format(
-                                "SELECT \"%s\" FROM \"idx\" WHERE \"%s\" = ?",
-                                columnName, columnName));
+                .isEqualTo("""
+                        SELECT "%1$s" FROM "idx" WHERE "%1$s" = ?""".formatted(columnName));
     }
 
     @Test
@@ -142,20 +138,19 @@ class ElasticsearchRowDataLookupFunctionTest {
                 function(
                         TABLE_NAME,
                         new String[] {REFERENCE_ID, VERSION},
-                        Arrays.asList("\"order.details.attributes.productName\" = ?", "\"@version\" > ?"),
+                        List.of("\"order.details.attributes.productName\" = ?", "\"@version\" > ?"),
                         "Product X",
                         1);
 
         function.prepareStatement(connection);
 
         verify(connection)
-                .prepareStatement(
-                        "SELECT \"order.details.referenceId\", "
-                                + "\"order.details.attributes.productName\", \"@version\" "
-                                + "FROM \"idx-orders.details-test\" "
-                                + "WHERE \"order.details.referenceId\" = ? AND \"@version\" = ? "
-                                + "AND (\"order.details.attributes.productName\" = ?) "
-                                + "AND (\"@version\" > ?)");
+                .prepareStatement("""
+                        SELECT "order.details.referenceId", "order.details.attributes.productName", "@version" \
+                        FROM "idx-orders.details-test" \
+                        WHERE "order.details.referenceId" = ? AND "@version" = ? \
+                        AND ("order.details.attributes.productName" = ?) \
+                        AND ("@version" > ?)""");
     }
 
     @Test
@@ -164,23 +159,22 @@ class ElasticsearchRowDataLookupFunctionTest {
                 function(
                         TABLE_NAME,
                         new String[0],
-                        Collections.singletonList("\"@version\" > ?"),
+                        List.of("\"@version\" > ?"),
                         1);
 
         function.prepareStatement(connection);
 
         verify(connection)
-                .prepareStatement(
-                        "SELECT \"order.details.referenceId\", "
-                                + "\"order.details.attributes.productName\", \"@version\" "
-                                + "FROM \"idx-orders.details-test\" "
-                                + "WHERE (\"@version\" > ?)");
+                .prepareStatement("""
+                        SELECT "order.details.referenceId", "order.details.attributes.productName", "@version" \
+                        FROM "idx-orders.details-test" \
+                        WHERE ("@version" > ?)""");
     }
 
     @Test
     void shouldNotAppendAnythingWithoutPredicates() throws Exception {
         ElasticsearchRowDataLookupFunction function =
-                function(TABLE_NAME, new String[] {REFERENCE_ID}, Collections.emptyList());
+                function(TABLE_NAME, new String[] {REFERENCE_ID}, List.of());
 
         function.prepareStatement(connection);
 
@@ -191,15 +185,29 @@ class ElasticsearchRowDataLookupFunctionTest {
     void shouldPassSpecialCharactersToDriverWithoutParsing() throws Exception {
         ElasticsearchRowDataLookupFunction function =
                 specialCharacterFunction(
-                        "remote:idx", Collections.singletonList("\"what?\" = ?"), "x");
+                        "remote:idx", List.of("\"what?\" = ?"), "x");
 
         FieldNamedPreparedStatement statement = function.prepareStatement(connection);
 
+        String expectedSql = """
+                SELECT "geo:loc", "what?" FROM "remote:idx" \
+                WHERE "geo:loc" = ? AND ("what?" = ?)""";
         assertThat(statement).isInstanceOf(PositionalPreparedStatement.class);
-        verify(connection)
-                .prepareStatement(
-                        "SELECT \"geo:loc\", \"what?\" FROM \"remote:idx\" "
-                                + "WHERE \"geo:loc\" = ? AND (\"what?\" = ?)");
+        assertThat(statement.getQuery()).isEqualTo(expectedSql);
+        verify(connection).prepareStatement(expectedSql);
+    }
+
+    // --- lineage
+
+    @Test
+    void shouldExposeLookupTableAsLineageSource() {
+        ElasticsearchRowDataLookupFunction function =
+                function(TABLE_NAME, new String[] {REFERENCE_ID}, List.of());
+
+        LineageVertex vertex = function.getLineageVertex();
+
+        assertThat(vertex.datasets()).hasSize(1);
+        assertThat(vertex.datasets().get(0).name()).isEqualTo(TABLE_NAME);
     }
 
     // --- parameter binding
@@ -210,7 +218,7 @@ class ElasticsearchRowDataLookupFunctionTest {
                 function(
                         TABLE_NAME,
                         new String[] {REFERENCE_ID, VERSION},
-                        Arrays.asList("\"order.details.attributes.productName\" = ?", "\"@version\" > ?"),
+                        List.of("\"order.details.attributes.productName\" = ?", "\"@version\" > ?"),
                         "Product X",
                         1);
         FieldNamedPreparedStatement statement = function.prepareStatement(connection);
@@ -229,7 +237,7 @@ class ElasticsearchRowDataLookupFunctionTest {
     @Test
     void shouldBindPushedDownParametersFromFirstPositionWhenThereAreNoKeys() throws Exception {
         ElasticsearchRowDataLookupFunction function =
-                function(TABLE_NAME, new String[0], Collections.singletonList("\"@version\" > ?"), 1);
+                function(TABLE_NAME, new String[0], List.of("\"@version\" > ?"), 1);
         FieldNamedPreparedStatement statement = function.prepareStatement(connection);
 
         function.bindParameters(statement, GenericRowData.of());
@@ -240,7 +248,7 @@ class ElasticsearchRowDataLookupFunctionTest {
     @Test
     void shouldBindNullKeyAsSqlNull() throws Exception {
         ElasticsearchRowDataLookupFunction function =
-                function(TABLE_NAME, new String[] {REFERENCE_ID, VERSION}, Collections.emptyList());
+                function(TABLE_NAME, new String[] {REFERENCE_ID, VERSION}, List.of());
         FieldNamedPreparedStatement statement = function.prepareStatement(connection);
 
         function.bindParameters(statement, GenericRowData.of(null, null));
@@ -260,7 +268,7 @@ class ElasticsearchRowDataLookupFunctionTest {
                         types,
                         new String[] {TIMESTAMP},
                         rowType(new String[] {REFERENCE_ID, TIMESTAMP}, types),
-                        Collections.emptyList(),
+                        List.of(),
                         new Serializable[0]);
         FieldNamedPreparedStatement statement = function.prepareStatement(connection);
         LocalDateTime timestamp = LocalDateTime.of(2020, 1, 1, 10, 0);
@@ -274,7 +282,7 @@ class ElasticsearchRowDataLookupFunctionTest {
     @Test
     void shouldClearParametersOnEveryBinding() throws Exception {
         ElasticsearchRowDataLookupFunction function =
-                function(TABLE_NAME, new String[] {REFERENCE_ID}, Collections.emptyList());
+                function(TABLE_NAME, new String[] {REFERENCE_ID}, List.of());
         FieldNamedPreparedStatement statement = function.prepareStatement(connection);
 
         function.bindParameters(statement, GenericRowData.of(StringData.fromString("a")));
@@ -288,7 +296,7 @@ class ElasticsearchRowDataLookupFunctionTest {
     @Test
     void shouldBindSpecialCharacterKeyAndPredicate() throws Exception {
         ElasticsearchRowDataLookupFunction function =
-                specialCharacterFunction(TABLE_NAME, Collections.singletonList("\"what?\" = ?"), "x");
+                specialCharacterFunction(TABLE_NAME, List.of("\"what?\" = ?"), "x");
         FieldNamedPreparedStatement statement = function.prepareStatement(connection);
 
         function.bindParameters(statement, GenericRowData.of(StringData.fromString("loc-1")));
@@ -308,7 +316,7 @@ class ElasticsearchRowDataLookupFunctionTest {
                                         new DataType[] {DataTypes.STRING()},
                                         new String[] {REFERENCE_ID},
                                         RowType.of(DataTypes.STRING().getLogicalType()),
-                                        Collections.emptyList(),
+                                        List.of(),
                                         new Serializable[0]))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining(REFERENCE_ID);

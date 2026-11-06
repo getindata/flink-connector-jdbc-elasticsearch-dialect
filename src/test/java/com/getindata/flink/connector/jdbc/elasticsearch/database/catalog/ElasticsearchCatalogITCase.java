@@ -29,6 +29,7 @@ import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -190,7 +191,7 @@ public class ElasticsearchCatalogITCase extends ElasticsearchCatalogTestBase {
         assertFalse(table.getOptions().containsKey("scan.partition.lower-bound"));
         assertFalse(table.getOptions().containsKey("scan.partition.upper-bound"));
         assertEquals(ElasticsearchDynamicTableFactory.IDENTIFIER, table.getOptions().get("connector"));
-        assertTrue(catalog.getFactory().orElseThrow(AssertionError::new) instanceof ElasticsearchDynamicTableFactory);
+        assertInstanceOf(ElasticsearchDynamicTableFactory.class, catalog.getFactory().orElseThrow());
     }
 
     @Test
@@ -641,12 +642,12 @@ public class ElasticsearchCatalogITCase extends ElasticsearchCatalogTestBase {
         tEnv.useCatalog("es");
 
         // when
-        List<Row> rows = CollectionUtil.iteratorToList(tEnv.executeSql(
-                "SELECT p.`opinions&complaints`, d.`scores/grades`"
-                        + " FROM `" + DEFAULT_DATABASE_NAME + "`.`" + INPUT_SPECIAL_CHARACTER_COLUMN_NAMES_TABLE + "` p"
-                        + " JOIN `" + DEFAULT_DATABASE_NAME + "`.`" + INPUT_SPECIAL_CHARACTER_COLUMN_NAMES_TABLE + "`"
-                        + " FOR SYSTEM_TIME AS OF p.proctime AS d"
-                        + " ON d.`@timestamp` = p.`@timestamp`").collect());
+        List<Row> rows = CollectionUtil.iteratorToList(tEnv.executeSql("""
+                SELECT p.`opinions&complaints`, d.`scores/grades`
+                FROM `%1$s`.`%2$s` p
+                JOIN `%1$s`.`%2$s` FOR SYSTEM_TIME AS OF p.proctime AS d
+                  ON d.`@timestamp` = p.`@timestamp`
+                """.formatted(DEFAULT_DATABASE_NAME, INPUT_SPECIAL_CHARACTER_COLUMN_NAMES_TABLE)).collect());
 
         // then
         assertEquals(1, rows.size());
@@ -669,8 +670,8 @@ public class ElasticsearchCatalogITCase extends ElasticsearchCatalogTestBase {
         // given
         createQuotedColumnNamesTable();
         Map<String, String> properties = new HashMap<>();
-        properties.put("properties.scan." + INPUT_QUOTED_COLUMN_NAMES_TABLE + ".partition.column.name", "count\"s");
-        properties.put("properties.scan." + INPUT_QUOTED_COLUMN_NAMES_TABLE + ".partition.number", "2");
+        properties.put("properties.scan.%s.partition.column.name".formatted(INPUT_QUOTED_COLUMN_NAMES_TABLE), "count\"s");
+        properties.put("properties.scan.%s.partition.number".formatted(INPUT_QUOTED_COLUMN_NAMES_TABLE), "2");
 
         // when
         ElasticsearchCatalog catalog = catalogBuilder().properties(properties).build();
@@ -688,8 +689,8 @@ public class ElasticsearchCatalogITCase extends ElasticsearchCatalogTestBase {
         // given
         createQuotedColumnNamesTable();
         Map<String, String> properties = new HashMap<>();
-        properties.put("properties.scan." + INPUT_QUOTED_COLUMN_NAMES_TABLE + ".partition.column.name", "metrics.value");
-        properties.put("properties.scan." + INPUT_QUOTED_COLUMN_NAMES_TABLE + ".partition.number", "2");
+        properties.put("properties.scan.%s.partition.column.name".formatted(INPUT_QUOTED_COLUMN_NAMES_TABLE), "metrics.value");
+        properties.put("properties.scan.%s.partition.number".formatted(INPUT_QUOTED_COLUMN_NAMES_TABLE), "2");
 
         // when
         ElasticsearchCatalog catalog = catalogBuilder().properties(properties).build();
@@ -724,16 +725,18 @@ public class ElasticsearchCatalogITCase extends ElasticsearchCatalogTestBase {
         // given
         createQuotedColumnNamesTable();
         Map<String, String> properties = new HashMap<>();
-        properties.put("properties.scan." + INPUT_QUOTED_COLUMN_NAMES_TABLE + ".partition.column.name", "count\"s");
-        properties.put("properties.scan." + INPUT_QUOTED_COLUMN_NAMES_TABLE + ".partition.number", "2");
+        properties.put("properties.scan.%s.partition.column.name".formatted(INPUT_QUOTED_COLUMN_NAMES_TABLE), "count\"s");
+        properties.put("properties.scan.%s.partition.number".formatted(INPUT_QUOTED_COLUMN_NAMES_TABLE), "2");
         TableEnvironment tEnv = TableEnvironment.create(EnvironmentSettings.inStreamingMode());
         tEnv.registerCatalog("es", catalogBuilder().properties(properties).build());
         tEnv.useCatalog("es");
 
         // when
-        List<Row> rows = CollectionUtil.iteratorToList(tEnv.executeSql(
-                "SELECT `label`, `count\"s` FROM `" + DEFAULT_DATABASE_NAME + "`.`"
-                        + INPUT_QUOTED_COLUMN_NAMES_TABLE + "` WHERE `count\"s` > 0").collect());
+        List<Row> rows = CollectionUtil.iteratorToList(tEnv.executeSql("""
+                SELECT `label`, `count"s`
+                FROM `%s`.`%s`
+                WHERE `count"s` > 0
+                """.formatted(DEFAULT_DATABASE_NAME, INPUT_QUOTED_COLUMN_NAMES_TABLE)).collect());
 
         // then
         assertEquals(2, rows.size());
