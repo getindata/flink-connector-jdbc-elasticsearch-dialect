@@ -56,6 +56,7 @@
     <flink.version>2.0.0</flink.version>
     <flink-connector-jdbc.version>4.0.0-2.0</flink-connector-jdbc.version>
     <jackson.version>2.15.2</jackson.version>
+    <lombok.version>1.18.48</lombok.version>
 
     <!-- Test -->
     <test.unit.pattern>**/*Test.*</test.unit.pattern>
@@ -73,7 +74,7 @@
     <mockito.version>2.21.0</mockito.version>
     <okhttp.version>4.10.0</okhttp.version>
     <slf4j-api.version>2.0.4</slf4j-api.version>
-    <testcontainers.version>1.18.2</testcontainers.version>
+    <testcontainers.version>1.21.4</testcontainers.version>
   </properties>
 
   <build>
@@ -91,6 +92,13 @@
             <!-- Prevents recompilation due to missing package-info.class, see MCOMPILER-205 -->
             <arg>-Xpkginfo:always</arg>
           </compilerArgs>
+          <annotationProcessorPaths>
+            <path>
+              <groupId>org.projectlombok</groupId>
+              <artifactId>lombok</artifactId>
+              <version>${lombok.version}</version>
+            </path>
+          </annotationProcessorPaths>
         </configuration>
       </plugin>
 
@@ -196,6 +204,13 @@
   </build>
 
   <dependencies>
+    <dependency>
+      <groupId>org.projectlombok</groupId>
+      <artifactId>lombok</artifactId>
+      <version>${lombok.version}</version>
+      <scope>provided</scope>
+    </dependency>
+
     <!-- Flink dependencies -->
     <dependency>
       <groupId>org.apache.flink</groupId>

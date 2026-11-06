@@ -1,0 +1,13 @@
+{
+  "settings": {
+    "number_of_shards": 1
+  },
+  "mappings": {
+    "properties": {
+      "count\"s": { "type": "integer" },
+      "event\"time": { "type": "date" },
+      "metrics.value": { "type": "integer" },
+      "label": { "type": "keyword" }
+    }
+  }
+}

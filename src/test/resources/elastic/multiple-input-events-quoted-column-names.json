@@ -1,0 +1,6 @@
+{ "create" : { "_index" : "test_quoted_column_names_table", "_id" : "1" } }
+{ "count\"s": 10, "event\"time": "2015-01-01T12:10:10Z", "metrics.value": 5, "label": "first" }
+{ "create" : { "_index" : "test_quoted_column_names_table", "_id" : "2" } }
+{ "count\"s": -3, "event\"time": "2015-01-01T05:15:10Z", "metrics.value": 7, "label": "second" }
+{ "create" : { "_index" : "test_quoted_column_names_table", "_id" : "3" } }
+{ "count\"s": 42, "event\"time": "2016-06-01T00:00:00Z", "metrics.value": -1, "label": "third" }

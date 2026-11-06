@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+-   Fix lookup join on tables and columns whose names contain special characters
+    (e.g. `a.b.c`, `@xyz`, `a:b`, `a?b`, cross-cluster `cluster:index`). The lookup query now uses
+    positional parameters, like the scan, instead of JDBC named parameters. Catalog tables now use
+    the new `elasticsearch-jdbc` connector, which accepts the same options as `jdbc`.
+    Tables defined with DDL must use `'connector' = 'elasticsearch-jdbc'` to get the fix,
+    `'connector' = 'jdbc'` still uses the upstream lookup.
+-   Upgrade Testcontainers to 1.21.4 to support recent Docker versions
+
 ## [0.3.0] - 2025-08-08
 
 -   Upgrade to Flink 2.0

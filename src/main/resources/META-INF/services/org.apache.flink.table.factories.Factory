@@ -14,3 +14,4 @@
 # limitations under the License.
 
 com.getindata.flink.connector.jdbc.elasticsearch.database.catalog.ElasticsearchJdbcCatalogFactory
+com.getindata.flink.connector.jdbc.elasticsearch.table.ElasticsearchDynamicTableFactory
