@@ -20,5 +20,12 @@ package com.getindata.flink.connector.jdbc.elasticsearch.testutils;
 /** Elasticsearch docker images. */
 public interface ElasticsearchImages {
 
-    String ELASTICSEARCH_8 = "docker.elastic.co/elasticsearch/elasticsearch:8.19.0";
+    /**
+     * Kept in sync with the {@code elasticsearch.version} property in the pom, so the server image
+     * and the JDBC driver on the test classpath can never drift apart. Surefire passes the property
+     * through; the default is only a fallback for runs outside Maven (e.g. from an IDE).
+     */
+    String ELASTICSEARCH_VERSION = System.getProperty("elasticsearch.version", "8.19.20");
+
+    String ELASTICSEARCH_8 = "docker.elastic.co/elasticsearch/elasticsearch:" + ELASTICSEARCH_VERSION;
 }
