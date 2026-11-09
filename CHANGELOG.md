@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-09
+
 -   Fix lookup join on tables and columns whose names contain special characters
     (e.g. `a.b.c`, `@xyz`, `a:b`, `a?b`, cross-cluster `cluster:index`). The lookup query now uses
     positional parameters, like the scan, instead of JDBC named parameters. Catalog tables now use
@@ -41,7 +43,9 @@
 
 -   Initial implementation of Elasticsearch SQL Dialect for flink-connector-jdbc
 
-[Unreleased]: https://github.com/getindata/flink-connector-jdbc-elasticsearch-dialect/compare/0.4.0...HEAD
+[Unreleased]: https://github.com/getindata/flink-connector-jdbc-elasticsearch-dialect/compare/0.5.0...HEAD
+
+[0.5.0]: https://github.com/getindata/flink-connector-jdbc-elasticsearch-dialect/compare/0.4.0...0.5.0
 
 [0.4.0]: https://github.com/getindata/flink-connector-jdbc-elasticsearch-dialect/compare/0.3.0...0.4.0
 
