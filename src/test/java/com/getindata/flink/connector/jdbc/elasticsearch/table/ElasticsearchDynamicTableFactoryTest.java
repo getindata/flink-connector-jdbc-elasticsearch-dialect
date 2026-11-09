@@ -1,22 +1,18 @@
 package com.getindata.flink.connector.jdbc.elasticsearch.table;
 
+import org.apache.flink.configuration.Configuration;
 import org.apache.flink.connector.jdbc.core.table.source.JdbcDynamicTableSource;
 import org.apache.flink.connector.jdbc.statement.FieldNamedPreparedStatement;
 import org.apache.flink.table.api.DataTypes;
+import org.apache.flink.table.api.ValidationException;
 import org.apache.flink.table.catalog.Column;
 import org.apache.flink.table.catalog.ResolvedSchema;
 import org.apache.flink.table.connector.source.DynamicTableSource;
 import org.apache.flink.table.connector.source.LookupTableSource;
 import org.apache.flink.table.connector.source.abilities.SupportsFilterPushDown;
-import org.apache.flink.table.connector.source.lookup.LookupFunctionProvider;
 import org.apache.flink.table.connector.source.lookup.PartialCachingLookupProvider;
-import org.apache.flink.table.expressions.CallExpression;
-import org.apache.flink.table.expressions.FieldReferenceExpression;
 import org.apache.flink.table.expressions.ResolvedExpression;
-import org.apache.flink.table.expressions.ValueLiteralExpression;
 import org.apache.flink.table.factories.utils.FactoryMocks;
-import org.apache.flink.table.functions.BuiltInFunctionDefinitions;
-import org.apache.flink.table.runtime.connector.source.LookupRuntimeProviderContext;
 import org.junit.jupiter.api.Test;
 
 import java.sql.Connection;
@@ -26,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -52,7 +49,7 @@ class ElasticsearchDynamicTableFactoryTest {
     void shouldCreateLookupFunctionWithPositionalParameters() {
         ElasticsearchDynamicTableSource source = createSource(options());
 
-        ElasticsearchRowDataLookupFunction function = lookupFunction(source, 0);
+        ElasticsearchRowDataLookupFunction function = SourceTableUtils.lookupFunction(source, 0);
 
         assertThat(function.getQuery())
                 .isEqualTo("""
@@ -67,7 +64,7 @@ class ElasticsearchDynamicTableFactoryTest {
         source.applyProjection(
                 new int[][] {{1}}, DataTypes.ROW(DataTypes.FIELD(PRODUCT_NAME, DataTypes.STRING())));
 
-        ElasticsearchRowDataLookupFunction function = lookupFunction(source, 0);
+        ElasticsearchRowDataLookupFunction function = SourceTableUtils.lookupFunction(source, 0);
 
         assertThat(function.getQuery())
                 .isEqualTo("""
@@ -86,7 +83,7 @@ class ElasticsearchDynamicTableFactoryTest {
         ElasticsearchDynamicTableSource source = createSource(options);
 
         LookupTableSource.LookupRuntimeProvider provider =
-                source.getLookupRuntimeProvider(lookupContext(0));
+                source.getLookupRuntimeProvider(SourceTableUtils.lookupContext(0));
 
         assertThat(provider).isInstanceOf(PartialCachingLookupProvider.class);
         assertThat(((PartialCachingLookupProvider) provider).createLookupFunction())
@@ -101,7 +98,7 @@ class ElasticsearchDynamicTableFactoryTest {
         ElasticsearchDynamicTableSource source = createSource(options);
 
         LookupTableSource.LookupRuntimeProvider provider =
-                source.getLookupRuntimeProvider(lookupContext(0));
+                source.getLookupRuntimeProvider(SourceTableUtils.lookupContext(0));
 
         assertThat(provider).isInstanceOf(PartialCachingLookupProvider.class);
         assertThat(((PartialCachingLookupProvider) provider).createLookupFunction())
@@ -111,7 +108,7 @@ class ElasticsearchDynamicTableFactoryTest {
     @Test
     void shouldNotCreateCacheByDefault() {
         LookupTableSource.LookupRuntimeProvider provider =
-                createSource(options()).getLookupRuntimeProvider(lookupContext(0));
+                createSource(options()).getLookupRuntimeProvider(SourceTableUtils.lookupContext(0));
 
         assertThat(provider).isNotInstanceOf(PartialCachingLookupProvider.class);
     }
@@ -166,10 +163,9 @@ class ElasticsearchDynamicTableFactoryTest {
                 ResolvedSchema.of(
                         Column.physical(REFERENCE_ID, DataTypes.STRING()),
                         Column.physical("geo:loc", DataTypes.STRING()));
-        ElasticsearchDynamicTableSource source =
-                (ElasticsearchDynamicTableSource) FactoryMocks.createTableSource(schema, options());
+        ElasticsearchDynamicTableSource source = SourceTableUtils.createSource(schema, options());
 
-        ElasticsearchRowDataLookupFunction function = lookupFunction(source, 1);
+        ElasticsearchRowDataLookupFunction function = SourceTableUtils.lookupFunction(source, 1);
 
         assertThat(function.getQuery())
                 .isEqualTo("""
@@ -185,17 +181,8 @@ class ElasticsearchDynamicTableFactoryTest {
                 ResolvedSchema.of(
                         Column.physical(REFERENCE_ID, DataTypes.STRING()),
                         Column.physical("what?", DataTypes.STRING()));
-        ElasticsearchDynamicTableSource source =
-                (ElasticsearchDynamicTableSource) FactoryMocks.createTableSource(schema, options());
-        source.applyFilters(
-                List.of(
-                        CallExpression.permanent(
-                                BuiltInFunctionDefinitions.EQUALS,
-                                List.of(
-                                        new FieldReferenceExpression(
-                                                "what?", DataTypes.STRING(), 0, 1),
-                                        new ValueLiteralExpression("x")),
-                                DataTypes.BOOLEAN())));
+        ElasticsearchDynamicTableSource source = SourceTableUtils.createSource(schema, options());
+        source.applyFilters(List.of(SourceTableUtils.equalsFilter("what?", 1, "x")));
         source.applyProjection(
                 new int[][] {{0}}, DataTypes.ROW(DataTypes.FIELD(REFERENCE_ID, DataTypes.STRING())));
         Connection connection = mock(Connection.class);
@@ -203,7 +190,7 @@ class ElasticsearchDynamicTableFactoryTest {
         when(connection.prepareStatement(anyString())).thenReturn(preparedStatement);
 
         FieldNamedPreparedStatement statement =
-                lookupFunction(source, 0).prepareStatement(connection);
+                SourceTableUtils.lookupFunction(source, 0).prepareStatement(connection);
 
         assertThat(statement).isInstanceOf(PositionalPreparedStatement.class);
         // the visitor and the lookup function both add parentheses
@@ -220,7 +207,8 @@ class ElasticsearchDynamicTableFactoryTest {
         Map<String, String> options = options();
         options.put("table-name", "remote:idx-orders");
 
-        ElasticsearchRowDataLookupFunction function = lookupFunction(createSource(options), 0);
+        ElasticsearchRowDataLookupFunction function =
+                SourceTableUtils.lookupFunction(createSource(options), 0);
 
         assertThat(function.getQuery())
                 .isEqualTo("""
@@ -231,14 +219,9 @@ class ElasticsearchDynamicTableFactoryTest {
 
     @Test
     void shouldCreateLookupWithMultipleKeysInLookupContextOrder() {
-        LookupTableSource.LookupRuntimeProvider provider =
-                createSource(options())
-                        .getLookupRuntimeProvider(
-                                new LookupRuntimeProviderContext(new int[][] {{1}, {0}}, false));
-
         ElasticsearchRowDataLookupFunction function =
                 (ElasticsearchRowDataLookupFunction)
-                        ((LookupFunctionProvider) provider).createLookupFunction();
+                        SourceTableUtils.runtimeLookupFunction(createSource(options()), 1, 0);
 
         assertThat(function.getQuery())
                 .endsWith("""
@@ -246,30 +229,62 @@ class ElasticsearchDynamicTableFactoryTest {
                         AND "order.details.referenceId" = ?""");
     }
 
-    private static ElasticsearchRowDataLookupFunction lookupFunction(
-            ElasticsearchDynamicTableSource source, int keyIndex) {
-        LookupTableSource.LookupRuntimeProvider provider =
-                source.getLookupRuntimeProvider(lookupContext(keyIndex));
-        assertThat(provider).isInstanceOf(LookupFunctionProvider.class);
-        return (ElasticsearchRowDataLookupFunction)
-                ((LookupFunctionProvider) provider).createLookupFunction();
+    @Test
+    void recheckShouldBeEnabledByDefault() {
+        assertThat(recheckSource(Map.of(), new Configuration()).getIgnoredKeywordRecheck().isEnabled()).isTrue();
     }
 
-    private static LookupRuntimeProviderContext lookupContext(int keyIndex) {
-        return new LookupRuntimeProviderContext(new int[][] {{keyIndex}}, false);
+    @Test
+    void recheckShouldBeTakenFromSession() {
+        var session = new Configuration();
+        session.setString("elasticsearch-jdbc.filter.ignored-keyword.recheck", "false");
+
+        assertThat(recheckSource(Map.of(), session).getIgnoredKeywordRecheck().isEnabled()).isFalse();
+    }
+
+    @Test
+    void tableOptionShouldOverrideSession() {
+        var sessionFalse = new Configuration();
+        sessionFalse.setString("elasticsearch-jdbc.filter.ignored-keyword.recheck", "false");
+        var sessionTrue = new Configuration();
+        sessionTrue.setString("elasticsearch-jdbc.filter.ignored-keyword.recheck", "true");
+
+        assertThat(recheckSource(Map.of("filter.ignored-keyword.recheck", "true"), sessionFalse)
+                .getIgnoredKeywordRecheck().isEnabled()).isTrue();
+        assertThat(recheckSource(Map.of("filter.ignored-keyword.recheck", "false"), sessionTrue)
+                .getIgnoredKeywordRecheck().isEnabled()).isFalse();
+    }
+
+    @Test
+    void shouldRejectInvalidRecheckValue() {
+        assertThatThrownBy(
+                        () -> recheckSource(
+                                Map.of("filter.ignored-keyword.recheck", "maybe"), new Configuration()))
+                .isInstanceOf(ValidationException.class)
+                .hasStackTraceContaining("filter.ignored-keyword.recheck");
+    }
+
+    @Test
+    void shouldAcceptRecheckAsTableOption() {
+        assertThat(FactoryMocks.createTableSource(SCHEMA, options())).isInstanceOf(ElasticsearchDynamicTableSource.class);
+        assertThat(new ElasticsearchDynamicTableFactory().optionalOptions())
+                .contains(EsConnectorOptions.FILTER_IGNORED_KEYWORD_RECHECK);
+    }
+
+    private static ElasticsearchDynamicTableSource recheckSource(
+            Map<String, String> tableOptions, Configuration session) {
+        var options = options();
+        options.remove("filter.ignored-keyword.recheck");
+        options.putAll(tableOptions);
+        return (ElasticsearchDynamicTableSource) FactoryMocks.createTableSource(SCHEMA, options, session);
     }
 
     private static ResolvedExpression productNameEquals(String value) {
-        return CallExpression.permanent(
-                BuiltInFunctionDefinitions.EQUALS,
-                List.of(
-                        new FieldReferenceExpression(PRODUCT_NAME, DataTypes.STRING(), 0, 1),
-                        new ValueLiteralExpression(value)),
-                DataTypes.BOOLEAN());
+        return SourceTableUtils.equalsFilter(PRODUCT_NAME, 1, value);
     }
 
     private static ElasticsearchDynamicTableSource createSource(Map<String, String> options) {
-        return (ElasticsearchDynamicTableSource) FactoryMocks.createTableSource(SCHEMA, options);
+        return SourceTableUtils.createSource(SCHEMA, options);
     }
 
     private static Map<String, String> options() {
@@ -277,12 +292,14 @@ class ElasticsearchDynamicTableFactoryTest {
         options.put("connector", ElasticsearchDynamicTableFactory.IDENTIFIER);
         options.put("url", "jdbc:elasticsearch://localhost:9200");
         options.put("table-name", "idx-orders.details-test");
+        options.put("filter.ignored-keyword.recheck", "false");
         return options;
     }
 
     private static Map<String, String> jdbcOptions() {
         Map<String, String> options = options();
         options.put("connector", "jdbc");
+        options.remove("filter.ignored-keyword.recheck");
         return options;
     }
 }

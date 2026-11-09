@@ -18,6 +18,7 @@
 
 package com.getindata.flink.connector.jdbc.elasticsearch.table;
 
+import org.apache.flink.configuration.ConfigOption;
 import org.apache.flink.configuration.ReadableConfig;
 import org.apache.flink.connector.jdbc.core.database.JdbcFactoryLoader;
 import org.apache.flink.connector.jdbc.core.table.JdbcDynamicTableFactory;
@@ -32,6 +33,7 @@ import org.apache.flink.table.factories.FactoryUtil;
 import javax.annotation.Nullable;
 import java.time.Duration;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.apache.flink.connector.jdbc.core.table.JdbcConnectorOptions.COMPATIBLE_MODE;
 import static org.apache.flink.connector.jdbc.core.table.JdbcConnectorOptions.DRIVER;
@@ -63,20 +65,31 @@ public class ElasticsearchDynamicTableFactory extends JdbcDynamicTableFactory {
     }
 
     @Override
+    public Set<ConfigOption<?>> optionalOptions() {
+        var options = super.optionalOptions();
+        options.add(EsConnectorOptions.FILTER_IGNORED_KEYWORD_RECHECK);
+        return options;
+    }
+
+    @Override
     public DynamicTableSource createDynamicTableSource(Context context) {
         // options validation and the schema against the dialect
         super.createDynamicTableSource(context);
 
         final ReadableConfig config = FactoryUtil.createTableFactoryHelper(this, context).getOptions();
         final String tableIdentifier = context.getObjectIdentifier().asSummaryString();
+        var options = getJdbcOptions(config, context.getClassLoader());
+        var filterHandlingPolicy = config.get(FILTER_HANDLING_POLICY);
+        var textFieldRecheck = EsConnectorOptions.resolveRecheck(config, context.getConfiguration());
         return new ElasticsearchDynamicTableSource(
-                getJdbcOptions(config, context.getClassLoader()),
+                options,
                 getJdbcReadOptions(config),
                 config.get(LookupOptions.MAX_RETRIES),
                 getLookupCache(config),
-                config.get(FILTER_HANDLING_POLICY),
+                filterHandlingPolicy,
                 context.getPhysicalRowDataType(),
-                tableIdentifier);
+                tableIdentifier,
+                new IgnoredKeywordRecheck(textFieldRecheck, filterHandlingPolicy, options));
     }
 
     // Copied from parent - private

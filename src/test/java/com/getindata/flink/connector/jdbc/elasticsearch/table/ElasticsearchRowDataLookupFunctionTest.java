@@ -26,6 +26,7 @@ import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -67,8 +68,8 @@ class ElasticsearchRowDataLookupFunctionTest {
                 ElasticsearchRowDataLookupFunction.buildLookupQuery(
                         dialect,
                         TABLE_NAME,
-                        new String[] {REFERENCE_ID, PRODUCT_NAME, TIMESTAMP},
-                        new String[] {REFERENCE_ID, TIMESTAMP});
+                        List.of(REFERENCE_ID, PRODUCT_NAME, TIMESTAMP),
+                        lookupKeyConditions(List.of(REFERENCE_ID, TIMESTAMP)));
 
         assertThat(query)
                 .isEqualTo("""
@@ -82,7 +83,7 @@ class ElasticsearchRowDataLookupFunctionTest {
     void shouldBuildQueryWithoutWhereClauseWhenThereAreNoKeys() {
         String query =
                 ElasticsearchRowDataLookupFunction.buildLookupQuery(
-                        dialect, TABLE_NAME, new String[] {REFERENCE_ID}, new String[0]);
+                        dialect, TABLE_NAME, List.of(REFERENCE_ID), List.of());
 
         assertThat(query)
                 .isEqualTo("SELECT \"order.details.referenceId\" FROM \"idx-orders.details-test\"");
@@ -104,7 +105,7 @@ class ElasticsearchRowDataLookupFunctionTest {
     void shouldKeepColumnNameUnchangedInQuery(String columnName) {
         String query =
                 ElasticsearchRowDataLookupFunction.buildLookupQuery(
-                        dialect, "idx", new String[] {columnName}, new String[] {columnName});
+                        dialect, "idx", List.of(columnName), lookupKeyConditions(List.of(columnName)));
 
         assertThat(query)
                 .isEqualTo("""
@@ -115,7 +116,7 @@ class ElasticsearchRowDataLookupFunctionTest {
     void shouldKeepCrossClusterTableNameUnchangedInQuery() {
         String query =
                 ElasticsearchRowDataLookupFunction.buildLookupQuery(
-                        dialect, "remote:idx", new String[] {GEO}, new String[] {GEO});
+                        dialect, "remote:idx", List.of(GEO), lookupKeyConditions(List.of(GEO)));
 
         assertThat(query).isEqualTo("SELECT \"geo:loc\" FROM \"remote:idx\" WHERE \"geo:loc\" = ?");
     }
@@ -124,7 +125,7 @@ class ElasticsearchRowDataLookupFunctionTest {
     void shouldEscapeDoubleQuoteInKeyAndSelectedColumns() {
         String query =
                 ElasticsearchRowDataLookupFunction.buildLookupQuery(
-                        dialect, "idx", new String[] {"a\"b", GEO}, new String[] {"a\"b"});
+                        dialect, "idx", List.of("a\"b", GEO), lookupKeyConditions(List.of("a\"b")));
 
         assertThat(query)
                 .isEqualTo("SELECT \"a\"\"b\", \"geo:loc\" FROM \"idx\" WHERE \"a\"\"b\" = ?");
@@ -137,7 +138,7 @@ class ElasticsearchRowDataLookupFunctionTest {
         ElasticsearchRowDataLookupFunction function =
                 function(
                         TABLE_NAME,
-                        new String[] {REFERENCE_ID, VERSION},
+                        List.of(REFERENCE_ID, VERSION),
                         List.of("\"order.details.attributes.productName\" = ?", "\"@version\" > ?"),
                         "Product X",
                         1);
@@ -158,7 +159,7 @@ class ElasticsearchRowDataLookupFunctionTest {
         ElasticsearchRowDataLookupFunction function =
                 function(
                         TABLE_NAME,
-                        new String[0],
+                        List.of(),
                         List.of("\"@version\" > ?"),
                         1);
 
@@ -174,7 +175,7 @@ class ElasticsearchRowDataLookupFunctionTest {
     @Test
     void shouldNotAppendAnythingWithoutPredicates() throws Exception {
         ElasticsearchRowDataLookupFunction function =
-                function(TABLE_NAME, new String[] {REFERENCE_ID}, List.of());
+                function(TABLE_NAME, List.of(REFERENCE_ID), List.of());
 
         function.prepareStatement(connection);
 
@@ -202,7 +203,7 @@ class ElasticsearchRowDataLookupFunctionTest {
     @Test
     void shouldExposeLookupTableAsLineageSource() {
         ElasticsearchRowDataLookupFunction function =
-                function(TABLE_NAME, new String[] {REFERENCE_ID}, List.of());
+                function(TABLE_NAME, List.of(REFERENCE_ID), List.of());
 
         LineageVertex vertex = function.getLineageVertex();
 
@@ -217,7 +218,7 @@ class ElasticsearchRowDataLookupFunctionTest {
         ElasticsearchRowDataLookupFunction function =
                 function(
                         TABLE_NAME,
-                        new String[] {REFERENCE_ID, VERSION},
+                        List.of(REFERENCE_ID, VERSION),
                         List.of("\"order.details.attributes.productName\" = ?", "\"@version\" > ?"),
                         "Product X",
                         1);
@@ -237,7 +238,7 @@ class ElasticsearchRowDataLookupFunctionTest {
     @Test
     void shouldBindPushedDownParametersFromFirstPositionWhenThereAreNoKeys() throws Exception {
         ElasticsearchRowDataLookupFunction function =
-                function(TABLE_NAME, new String[0], List.of("\"@version\" > ?"), 1);
+                function(TABLE_NAME, List.of(), List.of("\"@version\" > ?"), 1);
         FieldNamedPreparedStatement statement = function.prepareStatement(connection);
 
         function.bindParameters(statement, GenericRowData.of());
@@ -248,7 +249,7 @@ class ElasticsearchRowDataLookupFunctionTest {
     @Test
     void shouldBindNullKeyAsSqlNull() throws Exception {
         ElasticsearchRowDataLookupFunction function =
-                function(TABLE_NAME, new String[] {REFERENCE_ID, VERSION}, List.of());
+                function(TABLE_NAME, List.of(REFERENCE_ID, VERSION), List.of());
         FieldNamedPreparedStatement statement = function.prepareStatement(connection);
 
         function.bindParameters(statement, GenericRowData.of(null, null));
@@ -259,15 +260,16 @@ class ElasticsearchRowDataLookupFunctionTest {
 
     @Test
     void shouldBindTimestampKey() throws Exception {
-        DataType[] types = {DataTypes.STRING(), DataTypes.TIMESTAMP(3)};
+        var types = List.of(DataTypes.STRING(), DataTypes.TIMESTAMP(3));
         ElasticsearchRowDataLookupFunction function =
                 new ElasticsearchRowDataLookupFunction(
                         connectionOptions(TABLE_NAME),
                         0,
-                        new String[] {REFERENCE_ID, TIMESTAMP},
+                        List.of(REFERENCE_ID, TIMESTAMP),
                         types,
-                        new String[] {TIMESTAMP},
-                        rowType(new String[] {REFERENCE_ID, TIMESTAMP}, types),
+                        List.of(TIMESTAMP),
+                        lookupKeyConditions(List.of(TIMESTAMP)),
+                        rowType(List.of(REFERENCE_ID, TIMESTAMP), types),
                         List.of(),
                         new Serializable[0]);
         FieldNamedPreparedStatement statement = function.prepareStatement(connection);
@@ -282,7 +284,7 @@ class ElasticsearchRowDataLookupFunctionTest {
     @Test
     void shouldClearParametersOnEveryBinding() throws Exception {
         ElasticsearchRowDataLookupFunction function =
-                function(TABLE_NAME, new String[] {REFERENCE_ID}, List.of());
+                function(TABLE_NAME, List.of(REFERENCE_ID), List.of());
         FieldNamedPreparedStatement statement = function.prepareStatement(connection);
 
         function.bindParameters(statement, GenericRowData.of(StringData.fromString("a")));
@@ -312,14 +314,33 @@ class ElasticsearchRowDataLookupFunctionTest {
                                 new ElasticsearchRowDataLookupFunction(
                                         connectionOptions(TABLE_NAME),
                                         0,
-                                        new String[] {PRODUCT_NAME},
-                                        new DataType[] {DataTypes.STRING()},
-                                        new String[] {REFERENCE_ID},
+                                        List.of(PRODUCT_NAME),
+                                        List.of(DataTypes.STRING()),
+                                        List.of(REFERENCE_ID),
+                                        lookupKeyConditions(List.of(REFERENCE_ID)),
                                         RowType.of(DataTypes.STRING().getLogicalType()),
                                         List.of(),
                                         new Serializable[0]))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining(REFERENCE_ID);
+    }
+
+    @Test
+    void shouldRejectLookupKeyConditionsNotMatchingKeys() {
+        assertThatThrownBy(
+                        () ->
+                                new ElasticsearchRowDataLookupFunction(
+                                        connectionOptions(TABLE_NAME),
+                                        0,
+                                        List.of(REFERENCE_ID),
+                                        List.of(DataTypes.STRING()),
+                                        List.of(REFERENCE_ID),
+                                        List.of(),
+                                        RowType.of(DataTypes.STRING().getLogicalType()),
+                                        List.of(),
+                                        new Serializable[0]))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Expected a condition for every key.");
     }
 
     // --- upstream behaviour worked around by ElasticsearchRowDataLookupFunction
@@ -373,17 +394,18 @@ class ElasticsearchRowDataLookupFunctionTest {
     /** Function over (referenceId STRING, productName STRING, @version INT). */
     private ElasticsearchRowDataLookupFunction function(
             String tableName,
-            String[] keyNames,
+            List<String> keyNames,
             List<String> predicates,
             Serializable... pushdownParams) {
-        String[] fieldNames = {REFERENCE_ID, PRODUCT_NAME, VERSION};
-        DataType[] types = {DataTypes.STRING(), DataTypes.STRING(), DataTypes.INT()};
+        var fieldNames = List.of(REFERENCE_ID, PRODUCT_NAME, VERSION);
+        var types = List.of(DataTypes.STRING(), DataTypes.STRING(), DataTypes.INT());
         return new ElasticsearchRowDataLookupFunction(
                 connectionOptions(tableName),
                 0,
                 fieldNames,
                 types,
                 keyNames,
+                lookupKeyConditions(keyNames),
                 rowType(fieldNames, types),
                 predicates,
                 pushdownParams);
@@ -392,24 +414,28 @@ class ElasticsearchRowDataLookupFunctionTest {
     /** Function over (geo:loc STRING, what? STRING) with key geo:loc. */
     private ElasticsearchRowDataLookupFunction specialCharacterFunction(
             String tableName, List<String> predicates, Serializable... pushdownParams) {
-        String[] fieldNames = {GEO, QUESTION};
-        DataType[] types = {DataTypes.STRING(), DataTypes.STRING()};
+        var fieldNames = List.of(GEO, QUESTION);
+        var types = List.of(DataTypes.STRING(), DataTypes.STRING());
         return new ElasticsearchRowDataLookupFunction(
                 connectionOptions(tableName),
                 0,
                 fieldNames,
                 types,
-                new String[] {GEO},
+                List.of(GEO),
+                lookupKeyConditions(List.of(GEO)),
                 rowType(fieldNames, types),
                 predicates,
                 pushdownParams);
     }
 
-    private static RowType rowType(String[] fieldNames, DataType[] types) {
-        DataTypes.Field[] fields = new DataTypes.Field[fieldNames.length];
-        for (int i = 0; i < fieldNames.length; i++) {
-            fields[i] = DataTypes.FIELD(fieldNames[i], types[i]);
-        }
+    private List<String> lookupKeyConditions(List<String> keyNames) {
+        return keyNames.stream().map(keyName -> dialect.quoteIdentifier(keyName) + " = ?").toList();
+    }
+
+    private static RowType rowType(List<String> fieldNames, List<DataType> types) {
+        var fields = IntStream.range(0, fieldNames.size())
+                .mapToObj(i -> DataTypes.FIELD(fieldNames.get(i), types.get(i)))
+                .toArray(DataTypes.Field[]::new);
         return (RowType) DataTypes.ROW(fields).getLogicalType();
     }
 

@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+-   Fix documents silently missing from the result of filters and lookup joins on `text` columns
+    whose `keyword` subfield has no value (e.g. values longer than `ignore_above`).
+    New option `filter.ignored-keyword.recheck` (table option or hint) and
+    `elasticsearch-jdbc.filter.ignored-keyword.recheck` (session), enabled by default: pushed down
+    conditions on such columns also match documents that have the column but no value in the
+    subfield (`"col.keyword" IS NULL AND "col" IS NOT NULL`), and Flink checks the filters again. The columns are read from the Elasticsearch SQL metadata when the job is planned;
+    planning fails if they cannot be read. Not supported for cross-cluster tables (`cluster:index`) and
+    multi-valued fields where only some values exceed `ignore_above`. Columns with several `keyword`
+    subfields are not rechecked, as Elasticsearch SQL rejects filters on them; `IS NULL` /
+    `IS NOT NULL` are not extended, as they are not affected by `ignore_above`.
+-   **Behaviour change:** filters on `text` columns with a single `keyword` subfield are checked again by
+    Flink, which compares case-sensitively also when the subfield has a normalizer (e.g. `lowercase`).
+    Set `'filter.ignored-keyword.recheck' = 'false'` to restore the previous behaviour.
+-   `ElasticsearchDynamicTableSource` no longer has a public constructor; sources are created by the table factory.
+
 ## [0.6.0] - 2026-11-09
 
 ## [0.5.0] - 2026-11-09

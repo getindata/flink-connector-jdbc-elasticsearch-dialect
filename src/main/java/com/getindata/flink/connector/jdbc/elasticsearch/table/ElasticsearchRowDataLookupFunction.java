@@ -84,26 +84,27 @@ public class ElasticsearchRowDataLookupFunction extends LookupFunction implement
     public ElasticsearchRowDataLookupFunction(
             @NonNull InternalJdbcConnectionOptions options,
             int maxRetryTimes,
-            @NonNull String[] fieldNames,
-            @NonNull DataType[] fieldTypes,
-            @NonNull String[] keyNames,
+            @NonNull List<String> fieldNames,
+            @NonNull List<DataType> fieldTypes,
+            @NonNull List<String> keyNames,
+            @NonNull List<String> lookupKeyConditions,
             RowType rowType,
             @NonNull List<String> resolvedPredicates,
             @NonNull Serializable[] pushdownParams) {
         this.connectionProvider = new SimpleJdbcConnectionProvider(options);
-        List<String> nameList = Arrays.asList(fieldNames);
-        DataType[] keyTypes = Arrays.stream(keyNames)
+        var keyTypes = keyNames.stream()
                 .map(s -> {
-                    checkArgument(nameList.contains(s), "keyName %s can't find in fieldNames %s.", s, nameList);
-                    return fieldTypes[nameList.indexOf(s)];
-                }).toArray(DataType[]::new);
+                    checkArgument(fieldNames.contains(s), "keyName %s can't find in fieldNames %s.", s, fieldNames);
+                    return fieldTypes.get(fieldNames.indexOf(s));
+                }).toList();
         this.maxRetryTimes = maxRetryTimes;
         JdbcDialect jdbcDialect = options.getDialect();
-        this.numberOfKeys = keyNames.length;
-        this.query = buildLookupQuery(jdbcDialect, options.getTableName(), fieldNames, keyNames);
+        this.numberOfKeys = keyNames.size();
+        checkArgument(lookupKeyConditions.size() == numberOfKeys, "Expected a condition for every key.");
+        this.query = buildLookupQuery(jdbcDialect, options.getTableName(), fieldNames, lookupKeyConditions);
         this.jdbcDialectConverter = jdbcDialect.getRowConverter(rowType);
         this.producedType = RowType.of(
-                Arrays.stream(keyTypes).map(DataType::getLogicalType).toArray(LogicalType[]::new));
+                keyTypes.stream().map(DataType::getLogicalType).toArray(LogicalType[]::new));
         this.lookupKeyRowConverter = jdbcDialect.getRowConverter(producedType);
         this.resolvedPredicates = resolvedPredicates;
         this.pushdownParams = pushdownParams;
@@ -118,20 +119,22 @@ public class ElasticsearchRowDataLookupFunction extends LookupFunction implement
     static String buildLookupQuery(
             JdbcDialect dialect,
             String tableName,
-            String[] selectFields,
-            String[] keyNames) {
-        String selectExpressions =
-                Arrays.stream(selectFields)
-                        .map(dialect::quoteIdentifier)
-                        .collect(Collectors.joining(", "));
-        String conditions =
-                Arrays.stream(keyNames)
-                        .map(keyName -> dialect.quoteIdentifier(keyName) + " = ?")
-                        .collect(Collectors.joining(" AND "));
+            List<String> selectFields,
+            List<String> lookupKeyConditions) {
+        String selectExpressions = selectFields.stream()
+                .map(dialect::quoteIdentifier)
+                .collect(Collectors.joining(", "));
         return "SELECT %s FROM %s%s".formatted(
                 selectExpressions,
                 dialect.quoteIdentifier(tableName),
-                keyNames.length > 0 ? " WHERE " + conditions : "");
+                whereClause(lookupKeyConditions));
+    }
+
+    private static String whereClause(List<String> conditions) {
+        if (conditions.isEmpty()) {
+            return "";
+        }
+        return " WHERE " + String.join(" AND ", conditions);
     }
 
     // copy JdbcRowDataLookupFunction#open
