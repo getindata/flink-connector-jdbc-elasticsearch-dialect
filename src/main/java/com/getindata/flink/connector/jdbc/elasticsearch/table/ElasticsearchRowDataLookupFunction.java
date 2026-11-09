@@ -18,8 +18,6 @@
 
 package com.getindata.flink.connector.jdbc.elasticsearch.table;
 
-import lombok.AccessLevel;
-import lombok.Getter;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.flink.annotation.VisibleForTesting;
@@ -69,7 +67,6 @@ public class ElasticsearchRowDataLookupFunction extends LookupFunction implement
 
     private static final long serialVersionUID = 1L;
 
-    @Getter(value = AccessLevel.PACKAGE, onMethod_ = @VisibleForTesting)
     private final String query;
     private final JdbcConnectionProvider connectionProvider;
     // replaces keyNames of JdbcRowDataLookupFunction, only their number is needed
@@ -110,6 +107,11 @@ public class ElasticsearchRowDataLookupFunction extends LookupFunction implement
         this.lookupKeyRowConverter = jdbcDialect.getRowConverter(producedType);
         this.resolvedPredicates = resolvedPredicates;
         this.pushdownParams = pushdownParams;
+    }
+
+    @VisibleForTesting
+    String getQuery() {
+        return query;
     }
 
     @VisibleForTesting
