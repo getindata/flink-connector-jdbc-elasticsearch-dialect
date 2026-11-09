@@ -163,6 +163,36 @@ If only 1 option is provided we will receive an error.
 
 ---
 
+## Table connector `elasticsearch-jdbc`
+
+Tables read from the Elasticsearch Catalog use the `elasticsearch-jdbc` connector. It accepts the same
+options as the Flink [JDBC connector](https://nightlies.apache.org/flink/flink-docs-release-2.0/docs/connectors/table/jdbc/)
+(`jdbc`). Its lookup join supports column and table names with special characters, which are common in
+Elasticsearch (e.g. `a.b.c`, `@timestamp`, `a:b`, `a?b`, cross-cluster `cluster:index`).
+
+Tables defined with DDL should use `'connector' = 'elasticsearch-jdbc'`. With `'connector' = 'jdbc'` the
+lookup join fails for such names (FLINK-24948, FLINK-34146).
+
+```sql
+CREATE TABLE orders (
+  `order.details.referenceId` STRING,
+  `@timestamp` TIMESTAMP(3)
+) WITH (
+  'connector' = 'elasticsearch-jdbc',
+  'url' = 'jdbc:elasticsearch://localhost:9200',
+  'table-name' = 'orders',
+  'lookup.cache' = 'PARTIAL',
+  'lookup.partial-cache.max-rows' = '1000'
+);
+
+SELECT e.*, o.`@timestamp`
+FROM events AS e
+JOIN orders FOR SYSTEM_TIME AS OF e.proctime AS o
+  ON o.`order.details.referenceId` = e.referenceId;
+```
+
+---
+
 ### Implementation details
 
 `com.getindata.flink.connector.jdbc.elasticsearch.database.catalog.ElasticsearchJdbcCatalogFactory` - has been copied
@@ -170,3 +200,8 @@ because default CatalogFactory does not allow to pass custom catalog properties.
 
 `com.getindata.flink.connector.jdbc.elasticsearch.database.catalog.CopiedAbstractJdbcCatalog` is a copy of
 `org.apache.flink.connector.jdbc.core.database.catalog.AbstractJdbcCatalog` where JDBC validation is modified.
+
+`com.getindata.flink.connector.jdbc.elasticsearch.table.ElasticsearchDynamicTableFactory`,
+`ElasticsearchDynamicTableSource` and `ElasticsearchRowDataLookupFunction` contain code copied
+or modified from `flink-connector-jdbc`, marked in the source. The lookup query uses positional parameters (`?`)
+instead of the named parameters of `FieldNamedPreparedStatement`, whose parser breaks on such names.

@@ -1,16 +1,21 @@
 package com.getindata.flink.connector.jdbc.elasticsearch.database.catalog;
 
 
+import com.getindata.flink.connector.jdbc.elasticsearch.table.ElasticsearchDynamicTableFactory;
 import org.apache.flink.table.api.DataTypes;
+import org.apache.flink.table.api.EnvironmentSettings;
 import org.apache.flink.table.api.Schema;
 import org.apache.flink.table.api.Schema.UnresolvedColumn;
 import org.apache.flink.table.api.Schema.UnresolvedComputedColumn;
+import org.apache.flink.table.api.TableEnvironment;
 import org.apache.flink.table.catalog.CatalogBaseTable;
 import org.apache.flink.table.catalog.ObjectPath;
 import org.apache.flink.table.catalog.exceptions.CatalogException;
 import org.apache.flink.table.catalog.exceptions.DatabaseNotExistException;
 import org.apache.flink.table.catalog.exceptions.TableNotExistException;
 import org.apache.flink.table.types.AbstractDataType;
+import org.apache.flink.types.Row;
+import org.apache.flink.util.CollectionUtil;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
@@ -24,6 +29,7 @@ import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -184,6 +190,8 @@ public class ElasticsearchCatalogITCase extends ElasticsearchCatalogTestBase {
         assertFalse(table.getOptions().containsKey("scan.partition.num"));
         assertFalse(table.getOptions().containsKey("scan.partition.lower-bound"));
         assertFalse(table.getOptions().containsKey("scan.partition.upper-bound"));
+        assertEquals(ElasticsearchDynamicTableFactory.IDENTIFIER, table.getOptions().get("connector"));
+        assertInstanceOf(ElasticsearchDynamicTableFactory.class, catalog.getFactory().orElseThrow());
     }
 
     @Test
@@ -626,4 +634,113 @@ public class ElasticsearchCatalogITCase extends ElasticsearchCatalogTestBase {
         assertEquals(actualColumn, expectedColumn);
     }
 
+    @Test
+    public void testLookupJoinOnColumnsWithSpecialCharacters() {
+        // given
+        TableEnvironment tEnv = TableEnvironment.create(EnvironmentSettings.inStreamingMode());
+        tEnv.registerCatalog("es", catalogBuilder().addProctimeColumn(true).build());
+        tEnv.useCatalog("es");
+
+        // when
+        List<Row> rows = CollectionUtil.iteratorToList(tEnv.executeSql("""
+                SELECT p.`opinions&complaints`, d.`scores/grades`
+                FROM `%1$s`.`%2$s` p
+                JOIN `%1$s`.`%2$s` FOR SYSTEM_TIME AS OF p.proctime AS d
+                  ON d.`@timestamp` = p.`@timestamp`
+                """.formatted(DEFAULT_DATABASE_NAME, INPUT_SPECIAL_CHARACTER_COLUMN_NAMES_TABLE)).collect());
+
+        // then
+        assertEquals(1, rows.size());
+        assertEquals("A generally good product.", rows.get(0).getField(0));
+        assertEquals(8.76f, (Float) rows.get(0).getField(1), 0.0001f);
+    }
+
+
+    private static final String INPUT_QUOTED_COLUMN_NAMES_TABLE = "test_quoted_column_names_table";
+
+    private void createQuotedColumnNamesTable() throws Exception {
+        createTestIndex(INPUT_QUOTED_COLUMN_NAMES_TABLE, "elastic/test-quoted-column-names-index.json");
+        TimeUnit.SECONDS.sleep(1);
+        addTestData(INPUT_QUOTED_COLUMN_NAMES_TABLE, "elastic/multiple-input-events-quoted-column-names.json");
+        TimeUnit.SECONDS.sleep(1);
+    }
+
+    @Test
+    public void testGetTablePartitionedByIntegerColumnWithDoubleQuote() throws Exception {
+        // given
+        createQuotedColumnNamesTable();
+        Map<String, String> properties = new HashMap<>();
+        properties.put("properties.scan.%s.partition.column.name".formatted(INPUT_QUOTED_COLUMN_NAMES_TABLE), "count\"s");
+        properties.put("properties.scan.%s.partition.number".formatted(INPUT_QUOTED_COLUMN_NAMES_TABLE), "2");
+
+        // when
+        ElasticsearchCatalog catalog = catalogBuilder().properties(properties).build();
+        CatalogBaseTable table = catalog.getTable(new ObjectPath(DEFAULT_DATABASE_NAME, INPUT_QUOTED_COLUMN_NAMES_TABLE));
+
+        // then
+        assertEquals("count\"s", table.getOptions().get("scan.partition.column"));
+        assertEquals("2", table.getOptions().get("scan.partition.num"));
+        assertEquals("-3", table.getOptions().get("scan.partition.lower-bound"));
+        assertEquals("42", table.getOptions().get("scan.partition.upper-bound"));
+    }
+
+    @Test
+    public void testGetTablePartitionedByDottedIntegerColumn() throws Exception {
+        // given
+        createQuotedColumnNamesTable();
+        Map<String, String> properties = new HashMap<>();
+        properties.put("properties.scan.%s.partition.column.name".formatted(INPUT_QUOTED_COLUMN_NAMES_TABLE), "metrics.value");
+        properties.put("properties.scan.%s.partition.number".formatted(INPUT_QUOTED_COLUMN_NAMES_TABLE), "2");
+
+        // when
+        ElasticsearchCatalog catalog = catalogBuilder().properties(properties).build();
+        CatalogBaseTable table = catalog.getTable(new ObjectPath(DEFAULT_DATABASE_NAME, INPUT_QUOTED_COLUMN_NAMES_TABLE));
+
+        // then
+        assertEquals("-1", table.getOptions().get("scan.partition.lower-bound"));
+        assertEquals("7", table.getOptions().get("scan.partition.upper-bound"));
+    }
+
+    @Test
+    public void testGetTableWithDefaultScanOptionsOnTemporalColumnWithDoubleQuote() throws Exception {
+        // given
+        createQuotedColumnNamesTable();
+        Map<String, String> properties = new HashMap<>();
+        properties.put("catalog.default.scan.partition.column.name", "event\"time");
+        properties.put("catalog.default.scan.partition.size", "1");
+
+        // when
+        ElasticsearchCatalog catalog = catalogBuilder().properties(properties).build();
+        CatalogBaseTable table = catalog.getTable(new ObjectPath(DEFAULT_DATABASE_NAME, INPUT_QUOTED_COLUMN_NAMES_TABLE));
+
+        // then
+        assertEquals("event\"time", table.getOptions().get("scan.partition.column"));
+        assertEquals("3", table.getOptions().get("scan.partition.num"));
+        assertEquals("1420089310000", table.getOptions().get("scan.partition.lower-bound"));
+        assertEquals(calculateExpectedTemporalUpperBound(), table.getOptions().get("scan.partition.upper-bound"));
+    }
+
+    @Test
+    public void testScanTablePartitionedByColumnWithDoubleQuote() throws Exception {
+        // given
+        createQuotedColumnNamesTable();
+        Map<String, String> properties = new HashMap<>();
+        properties.put("properties.scan.%s.partition.column.name".formatted(INPUT_QUOTED_COLUMN_NAMES_TABLE), "count\"s");
+        properties.put("properties.scan.%s.partition.number".formatted(INPUT_QUOTED_COLUMN_NAMES_TABLE), "2");
+        TableEnvironment tEnv = TableEnvironment.create(EnvironmentSettings.inStreamingMode());
+        tEnv.registerCatalog("es", catalogBuilder().properties(properties).build());
+        tEnv.useCatalog("es");
+
+        // when
+        List<Row> rows = CollectionUtil.iteratorToList(tEnv.executeSql("""
+                SELECT `label`, `count"s`
+                FROM `%s`.`%s`
+                WHERE `count"s` > 0
+                """.formatted(DEFAULT_DATABASE_NAME, INPUT_QUOTED_COLUMN_NAMES_TABLE)).collect());
+
+        // then
+        assertEquals(2, rows.size());
+        assertTrue(rows.contains(Row.of("first", 10)));
+        assertTrue(rows.contains(Row.of("third", 42)));
+    }
 }

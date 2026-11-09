@@ -18,7 +18,9 @@
 package com.getindata.flink.connector.jdbc.elasticsearch.database.catalog;
 
 
-import org.apache.flink.connector.jdbc.core.table.JdbcDynamicTableFactory;
+import com.getindata.flink.connector.jdbc.elasticsearch.database.dialect.ElasticsearchDialect;
+import com.getindata.flink.connector.jdbc.elasticsearch.table.ElasticsearchDynamicTableFactory;
+import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.table.api.DataTypes;
 import org.apache.flink.table.api.Schema;
 import org.apache.flink.table.api.ValidationException;
@@ -29,6 +31,7 @@ import org.apache.flink.table.catalog.UniqueConstraint;
 import org.apache.flink.table.catalog.exceptions.CatalogException;
 import org.apache.flink.table.catalog.exceptions.DatabaseNotExistException;
 import org.apache.flink.table.catalog.exceptions.TableNotExistException;
+import org.apache.flink.table.factories.Factory;
 import org.apache.flink.table.types.DataType;
 import org.apache.flink.util.TemporaryClassLoaderContext;
 import org.elasticsearch.xpack.sql.jdbc.EsDriver;
@@ -76,6 +79,7 @@ public class ElasticsearchCatalog extends CopiedAbstractJdbcCatalog {
     }
 
     private static final Logger LOG = LoggerFactory.getLogger(ElasticsearchCatalog.class);
+    private static final ElasticsearchDialect DIALECT = new ElasticsearchDialect();
 
     private final ElasticTypeMapper dialectTypeMapper;
     private final String username;
@@ -177,6 +181,11 @@ public class ElasticsearchCatalog extends CopiedAbstractJdbcCatalog {
             }
         }
         return scanPartitionProperties;
+    }
+
+    @Override
+    public Optional<Factory> getFactory() {
+        return Optional.of(new ElasticsearchDynamicTableFactory());
     }
 
     @Override
@@ -371,7 +380,7 @@ public class ElasticsearchCatalog extends CopiedAbstractJdbcCatalog {
     }
 
     private ResultSetMetaData retrieveResultSetMetaData(Connection conn, ObjectPath tablePath) throws java.sql.SQLException {
-        String query = format("SELECT * FROM \"%s\" LIMIT 0", getSchemaTableName(tablePath));
+        String query = tableMetadataQuery(getSchemaTableName(tablePath));
         PreparedStatement ps = conn.prepareStatement(query);
         ResultSet rs = ps.executeQuery();
         return rs.getMetaData();
@@ -401,12 +410,37 @@ public class ElasticsearchCatalog extends CopiedAbstractJdbcCatalog {
         return type.equals(DataTypes.TIMESTAMP()) || type.equals(DataTypes.DATE());
     }
 
+    @VisibleForTesting
+    static String tableMetadataQuery(String tableName) {
+        return "SELECT * FROM %s LIMIT 0".formatted(DIALECT.quoteIdentifier(tableName));
+    }
+
+    @VisibleForTesting
+    static String partitionNumberQuery(String tableName, String partitionCapacity) {
+        return "SELECT CEIL(COUNT(*) / %s) FROM %s"
+                .formatted(partitionCapacity, DIALECT.quoteIdentifier(tableName));
+    }
+
+    @VisibleForTesting
+    static String partitionBoundsQuery(String tableName, String partitionColumn, boolean isPartitionColumnTemporal) {
+        String column = DIALECT.quoteIdentifier(partitionColumn);
+        String table = DIALECT.quoteIdentifier(tableName);
+        if (isPartitionColumnTemporal) {
+            return """
+                    SELECT COALESCE(MIN(%s), CURRENT_DATE) AS scanPartitionLowerBound, \
+                    DATE_ADD('days', 1, CURRENT_DATE) AS scanPartitionUpperBound \
+                    FROM %s""".formatted(column, table);
+        }
+        return """
+                SELECT MIN(%1$s) AS scanPartitionLowerBound, \
+                MAX(%1$s) AS scanPartitionUpperBound \
+                FROM %2$s""".formatted(column, table);
+    }
+
     private int calculatePartitionNumberBasedOnPartitionSize(Connection conn, String tableName) {
         try {
-            String scanPartitionInfoQuery = format(
-                    "SELECT CEIL(COUNT(*) / %s) FROM \"%s\"",
-                    this.catalogDefaultScanPartitionCapacity,
-                    tableName);
+            String scanPartitionInfoQuery =
+                    partitionNumberQuery(tableName, this.catalogDefaultScanPartitionCapacity);
             PreparedStatement preparedStatement = conn.prepareStatement(scanPartitionInfoQuery);
             ResultSet resultSet = preparedStatement.executeQuery();
             resultSet.next();
@@ -420,14 +454,8 @@ public class ElasticsearchCatalog extends CopiedAbstractJdbcCatalog {
     private void calculateScanPartitionBounds(Connection conn, String tableName, boolean isPartitionColumnTemporal,
                                               ScanPartitionProperties scanProperties) {
         try {
-            String scanPartitionInfoQuery;
-            if (isPartitionColumnTemporal) {
-                scanPartitionInfoQuery = format("SELECT COALESCE(MIN(\"%s\"), CURRENT_DATE) AS scanPartitionLowerBound, DATE_ADD('days', 1, CURRENT_DATE) AS scanPartitionUpperBound FROM \"%s\"",
-                        scanProperties.getPartitionColumnName(), tableName);
-            } else {
-                scanPartitionInfoQuery = format("SELECT MIN(\"%s\") AS scanPartitionLowerBound, MAX(%s) AS scanPartitionUpperBound FROM \"%s\"",
-                        scanProperties.getPartitionColumnName(), scanProperties.getPartitionColumnName(), tableName);
-            }
+            String scanPartitionInfoQuery = partitionBoundsQuery(
+                    tableName, scanProperties.getPartitionColumnName(), isPartitionColumnTemporal);
             PreparedStatement preparedStatement = conn.prepareStatement(scanPartitionInfoQuery);
             ResultSet resultSet = preparedStatement.executeQuery();
             resultSet.next();
@@ -446,7 +474,7 @@ public class ElasticsearchCatalog extends CopiedAbstractJdbcCatalog {
 
     private Map<String, String> createPropertiesMap(String tableName, ScanPartitionProperties scanProperties) {
         Map<String, String> properties = new HashMap<>();
-        properties.put(CONNECTOR.key(), JdbcDynamicTableFactory.IDENTIFIER);
+        properties.put(CONNECTOR.key(), ElasticsearchDynamicTableFactory.IDENTIFIER);
         properties.put(URL.key(), baseUrl);
         properties.put(ElasticsearchJdbcCatalogFactoryOptions.USERNAME.key(), username);
         properties.put(ElasticsearchJdbcCatalogFactoryOptions.PASSWORD.key(), pwd);

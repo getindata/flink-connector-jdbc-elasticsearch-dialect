@@ -1,0 +1,14 @@
+flink-connector-jdbc-elasticsearch-dialect
+Copyright 2023-2026 GetInData
+
+This product includes software developed at
+The Apache Software Foundation (http://www.apache.org/).
+
+Parts of the following classes are copied or modified from Apache Flink JDBC Connector
+(flink-connector-jdbc, Copyright 2022-2025 The Apache Software Foundation), licensed under
+the Apache License, Version 2.0. Copied and modified fragments are marked in the source code.
+
+  com.getindata.flink.connector.jdbc.elasticsearch.database.catalog.CopiedAbstractJdbcCatalog
+  com.getindata.flink.connector.jdbc.elasticsearch.table.ElasticsearchDynamicTableFactory
+  com.getindata.flink.connector.jdbc.elasticsearch.table.ElasticsearchDynamicTableSource
+  com.getindata.flink.connector.jdbc.elasticsearch.table.ElasticsearchRowDataLookupFunction

@@ -80,7 +80,7 @@ public class ElasticsearchDialect extends AbstractDialect {
 
     @Override
     public String quoteIdentifier(String identifier) {
-        return '"' + identifier + '"';
+        return '"' + identifier.replace("\"", "\"\"") + '"';
     }
 
     @Override
