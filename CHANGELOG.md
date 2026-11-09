@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-09
+
 ## [0.5.0] - 2026-11-09
 
 -   Fix lookup join on tables and columns whose names contain special characters
@@ -43,7 +45,9 @@
 
 -   Initial implementation of Elasticsearch SQL Dialect for flink-connector-jdbc
 
-[Unreleased]: https://github.com/getindata/flink-connector-jdbc-elasticsearch-dialect/compare/0.5.0...HEAD
+[Unreleased]: https://github.com/getindata/flink-connector-jdbc-elasticsearch-dialect/compare/0.6.0...HEAD
+
+[0.6.0]: https://github.com/getindata/flink-connector-jdbc-elasticsearch-dialect/compare/0.5.0...0.6.0
 
 [0.5.0]: https://github.com/getindata/flink-connector-jdbc-elasticsearch-dialect/compare/0.4.0...0.5.0
 
