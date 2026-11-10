@@ -169,7 +169,7 @@ Tables read from the Elasticsearch Catalog use the `elasticsearch-jdbc` connecto
 options as the Flink [JDBC connector](https://nightlies.apache.org/flink/flink-docs-release-2.0/docs/connectors/table/jdbc/)
 (`jdbc`). Its lookup join supports column and table names with special characters, which are common in
 Elasticsearch (e.g. `a.b.c`, `@timestamp`, `a:b`, `a?b`, cross-cluster `cluster:index`). Cross-cluster
-tables require `'filter.ignored-keyword.recheck' = 'false'`, see
+tables require `'filter.ignored-keyword.handling' = 'none'`, see
 [Filters on `text` fields with ignored `keyword` subfields](#filters-on-text-fields-with-ignored-keyword-subfields).
 
 Tables defined with DDL should use `'connector' = 'elasticsearch-jdbc'`. With `'connector' = 'jdbc'` the
@@ -206,8 +206,8 @@ field of the document. Elasticsearch SQL reads the column `RawXml` from `_source
 evaluates `=`, `<>`, `LIKE`, ... on `RawXml.keyword`, so such documents never match a pushed
 down filter. `IS NULL` and `IS NOT NULL` run as `exists` on `RawXml` itself and are not affected. They disappeared silently from the result of a scan or a lookup join.
 
-With `filter.ignored-keyword.recheck` (enabled by default) the connector, for `text` columns with exactly
-one `keyword` subfield:
+With `'filter.ignored-keyword.handling' = 'recheck'` (the default) the connector, for `text` columns
+with exactly one `keyword` subfield:
 
 1. extends every single pushed down condition (except `IS NULL` / `IS NOT NULL`) on such a column to documents that have the column but no
    value in the subfield, e.g.
@@ -222,14 +222,27 @@ only when a condition other than `IS NULL` / `IS NOT NULL` or a lookup key is a 
 
 | How | Key | Example |
 |---|---|---|
-| hint | `filter.ignored-keyword.recheck` | `SELECT * FROM docs /*+ OPTIONS('filter.ignored-keyword.recheck'='false') */ WHERE ...` |
-| table option (DDL) | `filter.ignored-keyword.recheck` | `'filter.ignored-keyword.recheck' = 'false'` |
-| session | `elasticsearch-jdbc.filter.ignored-keyword.recheck` | `SET 'elasticsearch-jdbc.filter.ignored-keyword.recheck' = 'false';` |
+| hint | `filter.ignored-keyword.handling` | `SELECT * FROM docs /*+ OPTIONS('filter.ignored-keyword.handling'='none') */ WHERE ...` |
+| table option (DDL) | `filter.ignored-keyword.handling` | `'filter.ignored-keyword.handling' = 'none'` |
+| session | `elasticsearch-jdbc.filter.ignored-keyword.handling` | `SET 'elasticsearch-jdbc.filter.ignored-keyword.handling' = 'none';` |
 
-A hint wins over the table option, which wins over the session option (default `true`). Hints require
+Values: `recheck` (the default) and `none` (filters are pushed down unchanged, as with the `jdbc`
+connector), case-insensitive. A hint wins over the table option, which wins over the session option
+(default `recheck`). Hints require
 `table.dynamic-table-options.enabled` (enabled by default). Catalog tables do not set the table option,
 use a hint or the session option for them. With `filter.handling.policy = never` nothing is pushed down
 and the option has no effect.
+
+**Multi-valued fields.** The Elasticsearch JDBC driver is lenient by default: for a field with several
+values it returns the first value in `_source` order, while a filter matches any of the values. A
+document with `"tags": ["x", "y"]` matches `tags = 'y'` but is returned as `tags = 'x'`, so the recheck
+in Flink would silently drop it (the same applies to lookup keys). With `recheck` the connector therefore
+sets the connection property `field.multi.value.leniency=false`, and a query that returns a
+multi-valued field (in any returned column, not only the filtered one) fails with
+`Arrays (returned by [...]) are not supported`. Setting `field.multi.value.leniency=true` in the URL or
+in `connection-properties.field.multi.value.leniency` together with `recheck` is rejected when the
+table is created. Use `'filter.ignored-keyword.handling' = 'none'` for tables with multi-valued fields;
+then the Elasticsearch semantics apply: a filter matches any value and the first value is returned.
 
 **Cost.** Every extended condition also returns all documents with an ignored subfield that match the
 other conditions; Flink filters them. If almost all values exceed `ignore_above` (e.g. long XML
@@ -243,24 +256,24 @@ subfield value (Elasticsearch SQL does not return `_ignored`). If the `keyword` 
 (e.g. `lowercase`), the result follows the case-sensitive Flink SQL semantics instead of the
 Elasticsearch comparison:
 
-| Query (values `A`, `a`, `bAb`) | Recheck disabled | Recheck enabled |
+| Query (values `A`, `a`, `bAb`) | `none` | `recheck` |
 |---|---|---|
 | `name LIKE '%a%'` | `A`, `a`, `bAb` | `a` |
 | `name = 'a'` | `a`, `a` (the document with `A` is returned as `a`) | `a` |
 
 For a case-insensitive comparison write `LOWER(name) LIKE '%a%'` (not pushed down, Flink evaluates it)
-or disable the option.
+or use `none`.
 
 **Limitations:**
 
 - `keyword` subfields with a normalizer other than the default one (e.g. `lowercase`, `uppercase`,
-  `asciifolding`): with the option enabled, filters on such columns follow the Flink SQL comparison of
-  the original value (case and accent sensitive), not the normalized comparison of Elasticsearch, so
-  fewer rows can be returned than with the option disabled (see **Normalizers** above). The same applies
-  to lookup join keys on such columns. Disable the option for such tables or use explicit functions in
-  the query (e.g. `LOWER(name) = 'a'`);
+  `asciifolding`): with `recheck`, filters on such columns follow the Flink SQL comparison of the
+  original value (case and accent sensitive), not the normalized comparison of Elasticsearch, so fewer
+  rows can be returned than with `none` (see **Normalizers** above). The same applies to lookup join
+  keys on such columns. Use `none` for such tables or explicit functions in the query
+  (e.g. `LOWER(name) = 'a'`);
 - cross-cluster tables (`'table-name' = 'cluster:index'`) are not supported: Elasticsearch SQL rejects
-  `:` in the table name of the metadata query and planning fails. Disable the option for such tables;
+  `:` in the table name of the metadata query and planning fails. Use `none` for such tables;
 - pure `keyword` fields with `ignore_above` and fields with `ignore_malformed` (numbers, dates, `ip`):
   Elasticsearch SQL returns `NULL` for ignored values, also without any filter, so there is nothing to
   check again. Only a mapping change helps;
@@ -270,10 +283,13 @@ or disable the option.
   SQL rejects `=`, `LIKE`, `IN`, `ORDER BY`, ... on them when the job runs
   (`Multiple exact keyword candidates available for [...]`), only `IS NULL` / `IS NOT NULL` work;
 - the partition column (`scan.partition.column`), which is numeric;
-- multi-valued fields, e.g. `["short", "a very long value"]`: the subfield has a value (`short`), so the
-  extended condition does not match the document, although Elasticsearch lists the subfield in `_ignored`. Elasticsearch SQL
-  rejects such fields anyway (`Arrays (returned by [...]) are not supported`) unless
-  `field.multi.value.leniency` is enabled in the JDBC URL, and then returns only the first value.
+- multi-valued fields where only some values exceed `ignore_above`, e.g. `["short", "a very long value"]`:
+  the subfield has a value (`short`), so neither the filter nor the extended condition matches the
+  document, although Elasticsearch lists the subfield in `_ignored`. The document is not returned, so the
+  strict multi-value mode does not report it either, and it is missing silently (with `recheck` and with
+  `none`). Such documents can be found with
+  `SELECT ... FROM idx WHERE QUERY('_ignored:"col.keyword"') AND "col.keyword" IS NOT NULL`
+  (`_ignored` is not a column).
 
 ---
 
@@ -289,6 +305,6 @@ because default CatalogFactory does not allow to pass custom catalog properties.
 `ElasticsearchDynamicTableSource` and `ElasticsearchRowDataLookupFunction` contain code copied
 or modified from `flink-connector-jdbc`, marked in the source. The lookup query uses positional parameters (`?`)
 instead of the named parameters of `FieldNamedPreparedStatement`, whose parser breaks on such names.
-With `filter.ignored-keyword.recheck` enabled, `RecheckedFilters` extends the Flink filter
+With `'filter.ignored-keyword.handling' = 'recheck'`, `RecheckedFilters` extends the Flink filter
 expressions before they are passed to `JdbcDynamicTableSource#applyFilters`, so the parent builds the scan
 query itself; the planner gets the original expressions back.

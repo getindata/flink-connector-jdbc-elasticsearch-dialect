@@ -33,6 +33,7 @@ import org.apache.flink.table.factories.FactoryUtil;
 import javax.annotation.Nullable;
 import java.time.Duration;
 import java.util.Optional;
+import java.util.Properties;
 import java.util.Set;
 
 import static org.apache.flink.connector.jdbc.core.table.JdbcConnectorOptions.COMPATIBLE_MODE;
@@ -67,7 +68,7 @@ public class ElasticsearchDynamicTableFactory extends JdbcDynamicTableFactory {
     @Override
     public Set<ConfigOption<?>> optionalOptions() {
         var options = super.optionalOptions();
-        options.add(EsConnectorOptions.FILTER_IGNORED_KEYWORD_RECHECK);
+        options.add(EsConnectorOptions.FILTER_IGNORED_KEYWORD_HANDLING);
         return options;
     }
 
@@ -78,7 +79,8 @@ public class ElasticsearchDynamicTableFactory extends JdbcDynamicTableFactory {
 
         final ReadableConfig config = FactoryUtil.createTableFactoryHelper(this, context).getOptions();
         final String tableIdentifier = context.getObjectIdentifier().asSummaryString();
-        var options = getJdbcOptions(config, context.getClassLoader());
+        var handling = EsConnectorOptions.resolveHandling(config, context.getConfiguration());
+        var options = getJdbcOptions(config, context.getClassLoader(), handling);
         return new ElasticsearchDynamicTableSource(
                 options,
                 getJdbcReadOptions(config),
@@ -87,21 +89,31 @@ public class ElasticsearchDynamicTableFactory extends JdbcDynamicTableFactory {
                 config.get(FILTER_HANDLING_POLICY),
                 context.getPhysicalRowDataType(),
                 tableIdentifier,
-                keywordSubfields(config, context, options));
+                keywordSubfields(handling, options));
     }
 
     private static KeywordSubfields keywordSubfields(
-            ReadableConfig config, Context context, InternalJdbcConnectionOptions options) {
-        if (EsConnectorOptions.resolveRecheck(config, context.getConfiguration())) {
+            IgnoredKeywordHandling handling, InternalJdbcConnectionOptions options) {
+        if (handling == IgnoredKeywordHandling.RECHECK) {
             return KeywordSubfields.read(options);
         }
         return KeywordSubfields.NONE;
     }
 
+    private static Properties connectionProperties(
+            String url, ReadableConfig readableConfig, IgnoredKeywordHandling handling) {
+        var connectionProperties = getConnectionProperties(readableConfig);
+        if (handling == IgnoredKeywordHandling.RECHECK) {
+            return StrictMultiValue.enforce(url, connectionProperties);
+        }
+        return connectionProperties;
+    }
+
     // Copied from parent - private
     private static InternalJdbcConnectionOptions getJdbcOptions(
-            ReadableConfig readableConfig, ClassLoader classLoader) {
+            ReadableConfig readableConfig, ClassLoader classLoader, IgnoredKeywordHandling handling) {
         final String url = readableConfig.get(URL);
+        final Properties connectionProperties = connectionProperties(url, readableConfig, handling);
         final InternalJdbcConnectionOptions.Builder builder =
                 InternalJdbcConnectionOptions.builder()
                         .setClassLoader(classLoader)
@@ -118,7 +130,7 @@ public class ElasticsearchDynamicTableFactory extends JdbcDynamicTableFactory {
         readableConfig.getOptional(USERNAME).ifPresent(builder::setUsername);
         readableConfig.getOptional(PASSWORD).ifPresent(builder::setPassword);
         readableConfig.getOptional(COMPATIBLE_MODE).ifPresent(builder::setCompatibleMode);
-        getConnectionProperties(readableConfig)
+        connectionProperties
                 .forEach((key, value) -> builder.setProperty(key.toString(), value.toString()));
         return builder.build();
     }

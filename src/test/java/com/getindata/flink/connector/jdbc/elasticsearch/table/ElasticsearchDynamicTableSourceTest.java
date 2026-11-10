@@ -321,7 +321,7 @@ class ElasticsearchDynamicTableSourceTest {
     }
 
     private static ElasticsearchDynamicTableSource source() {
-        return source(Map.of("filter.ignored-keyword.recheck", "false"));
+        return source(Map.of("filter.ignored-keyword.handling", "none"));
     }
 
     private static ElasticsearchDynamicTableSource recheckSource() {

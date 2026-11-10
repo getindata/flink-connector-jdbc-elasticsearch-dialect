@@ -28,6 +28,7 @@ import static org.assertj.core.api.Assertions.catchThrowable;
 class IgnoredKeywordRecheckITCase extends AbstractTestBase implements ElasticsearchTestBase {
 
     private static final String INDEX = "ignored_keyword_recheck";
+    private static final String MULTI_VALUE_INDEX = "ignored_keyword_recheck_multi_value";
     private static final String CLIENT = "some client long value";
     private static final String ZZZ = "zzz long value here";
     private static final String COLUMNS = "id INT, text_kw STRING, text_raw STRING, name STRING, kw STRING, two_kw STRING";
@@ -63,12 +64,22 @@ class IgnoredKeywordRecheckITCase extends AbstractTestBase implements Elasticsea
                 {"index": {"_id": "5"}}
                 {"id": 5, "text_kw": "abc", "text_raw": "abc", "kw": "abc"}
                 """.formatted(CLIENT, ZZZ));
+        client.createIndex(MULTI_VALUE_INDEX, """
+                {"mappings": {"properties": {
+                  "id": {"type": "integer"},
+                  "tags": {"type": "text", "fields": {"keyword": {"type": "keyword", "ignore_above": 10}}}
+                }}}""");
+        client.addDataBulk(MULTI_VALUE_INDEX, """
+                {"index": {"_id": "1"}}
+                {"id": 1, "tags": ["x", "y"]}
+                """);
     }
 
     @AfterAll
     static void deleteIndex() throws Exception {
         if (client != null) {
             client.deleteIndex(INDEX);
+            client.deleteIndex(MULTI_VALUE_INDEX);
         }
     }
 
@@ -77,7 +88,7 @@ class IgnoredKeywordRecheckITCase extends AbstractTestBase implements Elasticsea
         tEnv = StreamTableEnvironment.create(StreamExecutionEnvironment.getExecutionEnvironment());
         createTable(tEnv, "docs", "elasticsearch-jdbc", "");
         createTable(tEnv, "docs_flink", "elasticsearch-jdbc", ", 'filter.handling.policy' = 'never'");
-        createTable(tEnv, "docs_off", "elasticsearch-jdbc", ", 'filter.ignored-keyword.recheck' = 'false'");
+        createTable(tEnv, "docs_off", "elasticsearch-jdbc", ", 'filter.ignored-keyword.handling' = 'none'");
     }
 
     @ParameterizedTest
@@ -167,7 +178,7 @@ class IgnoredKeywordRecheckITCase extends AbstractTestBase implements Elasticsea
         var explainOn = tEnv.explainSql(sql);
         var rowsOn = query(sql);
 
-        tEnv.getConfig().set("elasticsearch-jdbc.filter.ignored-keyword.recheck", "false");
+        tEnv.getConfig().set("elasticsearch-jdbc.filter.ignored-keyword.handling", "none");
 
         assertThat(tEnv.explainSql(sql)).isEqualTo(explainOn).doesNotContain("Calc(");
         assertThat(query(sql)).isEqualTo(rowsOn).containsExactly(Row.of(1, "short"));
@@ -202,18 +213,18 @@ class IgnoredKeywordRecheckITCase extends AbstractTestBase implements Elasticsea
     @Test
     void recheckShouldBeConfigurable() {
         var filter = " WHERE text_kw LIKE '%client%'";
-        var hintOff = " /*+ OPTIONS('filter.ignored-keyword.recheck'='false') */";
-        var hintOn = " /*+ OPTIONS('filter.ignored-keyword.recheck'='true') */";
+        var hintOff = " /*+ OPTIONS('filter.ignored-keyword.handling'='none') */";
+        var hintOn = " /*+ OPTIONS('filter.ignored-keyword.handling'='recheck') */";
 
         assertThat(query("SELECT id FROM docs" + filter)).containsExactly(Row.of(2));
         assertThat(query("SELECT id FROM docs_off" + filter)).isEmpty();
         assertThat(query("SELECT id FROM docs_off" + hintOn + filter)).containsExactly(Row.of(2));
         assertThat(query("SELECT id FROM docs" + hintOff + filter)).isEmpty();
 
-        tEnv.getConfig().set("elasticsearch-jdbc.filter.ignored-keyword.recheck", "false");
+        tEnv.getConfig().set("elasticsearch-jdbc.filter.ignored-keyword.handling", "none");
         assertThat(query("SELECT id FROM docs" + filter)).isEmpty();
         assertThat(query("SELECT id FROM docs" + hintOn + filter)).containsExactly(Row.of(2));
-        createTable(tEnv, "docs_on", "elasticsearch-jdbc", ", 'filter.ignored-keyword.recheck' = 'true'");
+        createTable(tEnv, "docs_on", "elasticsearch-jdbc", ", 'filter.ignored-keyword.handling' = 'recheck'");
         assertThat(query("SELECT id FROM docs_on" + filter)).containsExactly(Row.of(2));
     }
 
@@ -230,11 +241,11 @@ class IgnoredKeywordRecheckITCase extends AbstractTestBase implements Elasticsea
                         metadata.getPassword(),
                         metadata.getJdbcUrl()));
         var sql = "SELECT id FROM es.`docker-cluster`.%s%s WHERE text_kw LIKE '%%client%%'";
-        var hintOff = " /*+ OPTIONS('filter.ignored-keyword.recheck'='false') */";
+        var hintOff = " /*+ OPTIONS('filter.ignored-keyword.handling'='none') */";
 
         assertThat(query(sql.formatted(INDEX, ""))).containsExactly(Row.of(2));
         assertThat(query(sql.formatted(INDEX, hintOff))).isEmpty();
-        tEnv.getConfig().set("elasticsearch-jdbc.filter.ignored-keyword.recheck", "false");
+        tEnv.getConfig().set("elasticsearch-jdbc.filter.ignored-keyword.handling", "none");
         assertThat(query(sql.formatted(INDEX, ""))).isEmpty();
     }
 
@@ -244,7 +255,7 @@ class IgnoredKeywordRecheckITCase extends AbstractTestBase implements Elasticsea
         var cacheOptions = FlinkTables.partialCacheOptions(cache);
         createTable(tEnv, "lookup_on", "elasticsearch-jdbc", cacheOptions);
         createTable(tEnv, "lookup_off", "elasticsearch-jdbc",
-                cacheOptions + ", 'filter.ignored-keyword.recheck' = 'false'");
+                cacheOptions + ", 'filter.ignored-keyword.handling' = 'none'");
         createProbe(Row.of(1, CLIENT), Row.of(2, "short"), Row.of(3, "missing"), Row.of(4, CLIENT), Row.of(5, null));
         var join = """
                 SELECT P.pid, D.id
@@ -279,6 +290,19 @@ class IgnoredKeywordRecheckITCase extends AbstractTestBase implements Elasticsea
         // document 3 matches the extended condition in Elasticsearch, Flink drops it
         assertThat(query(join.formatted("docs"))).containsExactly(Row.of(2, CLIENT));
         assertThat(query(join.formatted("docs_off"))).isEmpty();
+    }
+
+    @Test
+    void recheckShouldFailOnMultiValuedFieldInsteadOfDroppingRows() {
+        elasticsearchTable("tags", "id INT, tags STRING", MULTI_VALUE_INDEX).build().createIn(tEnv);
+        var sql = "SELECT id, tags FROM tags%s WHERE tags LIKE 'y%%'";
+
+        var failure = catchThrowable(() -> query(sql.formatted("")));
+
+        assertThat(ExceptionUtils.findThrowableWithMessage(failure, "Arrays (returned by [tags]) are not supported"))
+                .isPresent();
+        assertThat(query(sql.formatted(" /*+ OPTIONS('filter.ignored-keyword.handling'='none') */")))
+                .containsExactly(Row.of(1, "x"));
     }
 
     private void createProbe(Row... rows) {

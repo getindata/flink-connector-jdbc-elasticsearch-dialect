@@ -9,30 +9,30 @@ import org.apache.flink.configuration.ReadableConfig;
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public final class EsConnectorOptions {
 
-    private static final String RECHECK_DESCRIPTION = """
-            Prevents losing documents whose 'keyword' subfield was ignored (e.g. 'ignore_above') \
-            when filters on 'text' columns are pushed down; such filters are checked again in Flink. \
-            Not supported for cross-cluster tables.""";
+    private static final String HANDLING_DESCRIPTION = """
+            How filters on 'text' columns are pushed down when their 'keyword' subfield may have been \
+            ignored (e.g. 'ignore_above'), which would make Elasticsearch lose such documents. \
+            Recheck is not supported for cross-cluster tables.""";
 
-    public static final ConfigOption<Boolean> FILTER_IGNORED_KEYWORD_RECHECK =
-            ConfigOptions.key("filter.ignored-keyword.recheck")
-                    .booleanType()
+    public static final ConfigOption<IgnoredKeywordHandling> FILTER_IGNORED_KEYWORD_HANDLING =
+            ConfigOptions.key("filter.ignored-keyword.handling")
+                    .enumType(IgnoredKeywordHandling.class)
                     .noDefaultValue()
                     .withDescription("""
-                            %s Overrides '%s.filter.ignored-keyword.recheck'. Default: true."""
-                            .formatted(RECHECK_DESCRIPTION, ElasticsearchDynamicTableFactory.IDENTIFIER));
+                            %s Overrides '%s.filter.ignored-keyword.handling'. Default: recheck."""
+                            .formatted(HANDLING_DESCRIPTION, ElasticsearchDynamicTableFactory.IDENTIFIER));
 
-    public static final ConfigOption<Boolean> SESSION_FILTER_IGNORED_KEYWORD_RECHECK =
-            ConfigOptions.key(ElasticsearchDynamicTableFactory.IDENTIFIER + ".filter.ignored-keyword.recheck")
-                    .booleanType()
-                    .defaultValue(true)
+    public static final ConfigOption<IgnoredKeywordHandling> SESSION_FILTER_IGNORED_KEYWORD_HANDLING =
+            ConfigOptions.key(ElasticsearchDynamicTableFactory.IDENTIFIER + ".filter.ignored-keyword.handling")
+                    .enumType(IgnoredKeywordHandling.class)
+                    .defaultValue(IgnoredKeywordHandling.RECHECK)
                     .withDescription("""
-                            %s Session default for 'filter.ignored-keyword.recheck'."""
-                            .formatted(RECHECK_DESCRIPTION));
+                            %s Session default for 'filter.ignored-keyword.handling'."""
+                            .formatted(HANDLING_DESCRIPTION));
 
-    public static boolean resolveRecheck(ReadableConfig tableConfig, ReadableConfig sessionConfig) {
+    public static IgnoredKeywordHandling resolveHandling(ReadableConfig tableConfig, ReadableConfig sessionConfig) {
         return tableConfig
-                .getOptional(FILTER_IGNORED_KEYWORD_RECHECK)
-                .orElseGet(() -> sessionConfig.get(SESSION_FILTER_IGNORED_KEYWORD_RECHECK));
+                .getOptional(FILTER_IGNORED_KEYWORD_HANDLING)
+                .orElseGet(() -> sessionConfig.get(SESSION_FILTER_IGNORED_KEYWORD_HANDLING));
     }
 }

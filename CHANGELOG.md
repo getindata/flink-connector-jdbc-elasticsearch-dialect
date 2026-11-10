@@ -4,8 +4,8 @@
 
 -   Fix documents silently missing from the result of filters and lookup joins on `text` columns
     whose `keyword` subfield has no value (e.g. values longer than `ignore_above`).
-    New option `filter.ignored-keyword.recheck` (table option or hint) and
-    `elasticsearch-jdbc.filter.ignored-keyword.recheck` (session), enabled by default: pushed down
+    New option `filter.ignored-keyword.handling` (table option or hint) and
+    `elasticsearch-jdbc.filter.ignored-keyword.handling` (session), `recheck` (default) or `none`: pushed down
     conditions on such columns also match documents that have the column but no value in the
     subfield (`"col.keyword" IS NULL AND "col" IS NOT NULL`), and Flink checks the filters again. The columns are read from the Elasticsearch SQL metadata when the job is planned;
     planning fails if they cannot be read. Not supported for cross-cluster tables (`cluster:index`) and
@@ -14,7 +14,11 @@
     `IS NOT NULL` are not extended, as they are not affected by `ignore_above`.
 -   **Behaviour change:** filters on `text` columns with a single `keyword` subfield are checked again by
     Flink, which compares case-sensitively also when the subfield has a normalizer (e.g. `lowercase`).
-    Set `'filter.ignored-keyword.recheck' = 'false'` to restore the previous behaviour.
+    Set `'filter.ignored-keyword.handling' = 'none'` to restore the previous behaviour.
+-   **Behaviour change:** with `recheck` the connector sets the connection property
+    `field.multi.value.leniency=false`, so queries returning multi-valued fields fail with
+    `Arrays (returned by [...]) are not supported` instead of returning the first value, which the recheck would silently drop. An explicit
+    `field.multi.value.leniency=true` together with `recheck` is rejected; use `none` for such tables.
 -   `ElasticsearchDynamicTableSource` no longer has a public constructor; sources are created by the table factory.
 -   The public constructor of `ElasticsearchRowDataLookupFunction` takes the lookup keys instead of field and key lists.
 

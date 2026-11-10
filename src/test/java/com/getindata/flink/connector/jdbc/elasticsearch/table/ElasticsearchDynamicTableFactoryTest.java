@@ -14,6 +14,8 @@ import org.apache.flink.table.connector.source.lookup.PartialCachingLookupProvid
 import org.apache.flink.table.expressions.ResolvedExpression;
 import org.apache.flink.table.factories.utils.FactoryMocks;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -32,6 +34,9 @@ class ElasticsearchDynamicTableFactoryTest {
 
     private static final String REFERENCE_ID = "order.details.referenceId";
     private static final String PRODUCT_NAME = "order.details.attributes.productName";
+
+    private static final String HANDLING = "filter.ignored-keyword.handling";
+    private static final String URL = "jdbc:elasticsearch://localhost:9200";
 
     private static final ResolvedSchema SCHEMA =
             ResolvedSchema.of(
@@ -231,50 +236,92 @@ class ElasticsearchDynamicTableFactoryTest {
 
     @Test
     void recheckShouldBeEnabledByDefault() {
-        assertThat(recheckSource(Map.of(), new Configuration()).getKeywordSubfields()).isNotSameAs(KeywordSubfields.NONE);
+        assertThat(handlingSource(Map.of(), new Configuration()).getKeywordSubfields())
+                .isNotSameAs(KeywordSubfields.NONE);
     }
 
     @Test
-    void recheckShouldBeTakenFromSession() {
-        var session = new Configuration();
-        session.setString("elasticsearch-jdbc.filter.ignored-keyword.recheck", "false");
-
-        assertThat(recheckSource(Map.of(), session).getKeywordSubfields()).isSameAs(KeywordSubfields.NONE);
+    void handlingShouldBeTakenFromSession() {
+        assertThat(handlingSource(Map.of(), session("none")).getKeywordSubfields()).isSameAs(KeywordSubfields.NONE);
+        assertThat(handlingSource(Map.of(), session("recheck")).getKeywordSubfields())
+                .isNotSameAs(KeywordSubfields.NONE);
     }
 
     @Test
     void tableOptionShouldOverrideSession() {
-        var sessionFalse = new Configuration();
-        sessionFalse.setString("elasticsearch-jdbc.filter.ignored-keyword.recheck", "false");
-        var sessionTrue = new Configuration();
-        sessionTrue.setString("elasticsearch-jdbc.filter.ignored-keyword.recheck", "true");
+        assertThat(handlingSource(Map.of(HANDLING, "recheck"), session("none")).getKeywordSubfields())
+                .isNotSameAs(KeywordSubfields.NONE);
+        assertThat(handlingSource(Map.of(HANDLING, "none"), session("recheck")).getKeywordSubfields())
+                .isSameAs(KeywordSubfields.NONE);
+    }
 
-        assertThat(recheckSource(Map.of("filter.ignored-keyword.recheck", "true"), sessionFalse)
-                .getKeywordSubfields()).isNotSameAs(KeywordSubfields.NONE);
-        assertThat(recheckSource(Map.of("filter.ignored-keyword.recheck", "false"), sessionTrue)
-                .getKeywordSubfields()).isSameAs(KeywordSubfields.NONE);
+    @ParameterizedTest
+    @ValueSource(strings = {"NONE", "None", "none"})
+    void handlingShouldBeCaseInsensitive(String value) {
+        assertThat(handlingSource(Map.of(HANDLING, value), new Configuration()).getKeywordSubfields())
+                .isSameAs(KeywordSubfields.NONE);
     }
 
     @Test
-    void shouldRejectInvalidRecheckValue() {
-        assertThatThrownBy(
-                        () -> recheckSource(
-                                Map.of("filter.ignored-keyword.recheck", "maybe"), new Configuration()))
+    void shouldRejectInvalidHandlingValue() {
+        assertThatThrownBy(() -> handlingSource(Map.of(HANDLING, "true"), new Configuration()))
                 .isInstanceOf(ValidationException.class)
-                .hasStackTraceContaining("filter.ignored-keyword.recheck");
+                .hasStackTraceContaining(HANDLING);
     }
 
     @Test
-    void shouldAcceptRecheckAsTableOption() {
-        assertThat(FactoryMocks.createTableSource(SCHEMA, options())).isInstanceOf(ElasticsearchDynamicTableSource.class);
+    void shouldAcceptHandlingAsTableOption() {
         assertThat(new ElasticsearchDynamicTableFactory().optionalOptions())
-                .contains(EsConnectorOptions.FILTER_IGNORED_KEYWORD_RECHECK);
+                .contains(EsConnectorOptions.FILTER_IGNORED_KEYWORD_HANDLING);
     }
 
-    private static ElasticsearchDynamicTableSource recheckSource(
+    @Test
+    void recheckShouldMakeMultiValueHandlingStrict() {
+        var strictUrl = URL + "/?field.multi.value.leniency=false";
+
+        assertThat(handlingSource(Map.of(), new Configuration()).getConnectionOptions())
+                .satisfies(options -> assertThat(options.getDbURL()).isEqualTo(URL))
+                .satisfies(options -> assertThat(options.getProperties())
+                        .containsEntry("field.multi.value.leniency", "false"));
+        assertThat(handlingSource(Map.of("url", strictUrl), new Configuration()).getConnectionOptions())
+                .satisfies(options -> assertThat(options.getDbURL()).isEqualTo(strictUrl))
+                .satisfies(options -> assertThat(options.getProperties())
+                        .containsEntry("field.multi.value.leniency", "false"));
+    }
+
+    @Test
+    void noneShouldKeepMultiValueHandling() {
+        var lenientUrl = URL + "/?field.multi.value.leniency=true";
+
+        assertThat(handlingSource(Map.of(HANDLING, "none", "url", lenientUrl), new Configuration())
+                .getConnectionOptions())
+                .satisfies(options -> assertThat(options.getDbURL()).isEqualTo(lenientUrl))
+                .satisfies(options -> assertThat(options.getProperties())
+                        .doesNotContainKey("field.multi.value.leniency"));
+    }
+
+    @Test
+    void recheckShouldRejectLenientMultiValueHandling() {
+        assertThatThrownBy(() -> handlingSource(
+                        Map.of("url", URL + "/?field.multi.value.leniency=true"), new Configuration()))
+                .isInstanceOf(ValidationException.class)
+                .hasStackTraceContaining("'field.multi.value.leniency' = 'true' cannot be used with")
+                .hasStackTraceContaining("'filter.ignored-keyword.handling' = 'none'");
+        assertThatThrownBy(() -> handlingSource(
+                        Map.of("connection-properties.field.multi.value.leniency", "true"), session("recheck")))
+                .isInstanceOf(ValidationException.class);
+    }
+
+    private static Configuration session(String handling) {
+        var session = new Configuration();
+        session.setString("elasticsearch-jdbc." + HANDLING, handling);
+        return session;
+    }
+
+    private static ElasticsearchDynamicTableSource handlingSource(
             Map<String, String> tableOptions, Configuration session) {
         var options = options();
-        options.remove("filter.ignored-keyword.recheck");
+        options.remove(HANDLING);
         options.putAll(tableOptions);
         return (ElasticsearchDynamicTableSource) FactoryMocks.createTableSource(SCHEMA, options, session);
     }
@@ -290,16 +337,16 @@ class ElasticsearchDynamicTableFactoryTest {
     private static Map<String, String> options() {
         Map<String, String> options = new HashMap<>();
         options.put("connector", ElasticsearchDynamicTableFactory.IDENTIFIER);
-        options.put("url", "jdbc:elasticsearch://localhost:9200");
+        options.put("url", URL);
         options.put("table-name", "idx-orders.details-test");
-        options.put("filter.ignored-keyword.recheck", "false");
+        options.put(HANDLING, "none");
         return options;
     }
 
     private static Map<String, String> jdbcOptions() {
         Map<String, String> options = options();
         options.put("connector", "jdbc");
-        options.remove("filter.ignored-keyword.recheck");
+        options.remove(HANDLING);
         return options;
     }
 }

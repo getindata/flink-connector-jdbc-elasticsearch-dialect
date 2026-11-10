@@ -96,6 +96,11 @@ public class ElasticsearchDynamicTableSource extends JdbcDynamicTableSource {
         return keywordSubfields;
     }
 
+    @VisibleForTesting
+    InternalJdbcConnectionOptions getConnectionOptions() {
+        return options;
+    }
+
     @Override
     public LookupRuntimeProvider getLookupRuntimeProvider(LookupContext context) {
         final RowType rowType = (RowType) physicalRowDataType.getLogicalType();

@@ -106,8 +106,8 @@ class IgnoredKeywordRecheckPrivilegesITCase extends AbstractTestBase implements 
                         .isEqualTo(Map.of("text_kw", "text_kw.keyword"));
             }
         });
-        var recheckOn = outcome(() -> assertThat(flinkQuery(user, "true")).containsExactly(Row.of(2)));
-        var recheckOff = outcome(() -> assertThat(flinkQuery(user, "false")).isEmpty());
+        var recheckOn = outcome(() -> assertThat(flinkQuery(user, "recheck")).containsExactly(Row.of(2)));
+        var recheckOff = outcome(() -> assertThat(flinkQuery(user, "none")).isEmpty());
 
         assertThat(List.of(getColumns, recheckOn, recheckOff)).containsOnly(select);
     }
@@ -129,13 +129,13 @@ class IgnoredKeywordRecheckPrivilegesITCase extends AbstractTestBase implements 
         }
     }
 
-    private List<Row> flinkQuery(String user, String recheck) {
+    private List<Row> flinkQuery(String user, String handling) {
         TableEnvironment tEnv =
                 StreamTableEnvironment.create(StreamExecutionEnvironment.getExecutionEnvironment());
         elasticsearchTable("docs", "id INT, text_kw STRING", INDEX)
                 .username(user)
                 .password(PASSWORD)
-                .options(", 'filter.ignored-keyword.recheck' = '%s'".formatted(recheck))
+                .options(", 'filter.ignored-keyword.handling' = '%s'".formatted(handling))
                 .build()
                 .createIn(tEnv);
         return FlinkTables.collect(tEnv, "SELECT id FROM docs WHERE text_kw LIKE '%client%'");
