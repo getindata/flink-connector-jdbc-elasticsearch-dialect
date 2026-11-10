@@ -17,7 +17,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-class RecheckedKeysLookupFunctionTest {
+class ExactKeyMatchLookupFunctionTest {
 
     private static final LogicalType STRING = DataTypes.STRING().getLogicalType();
 
@@ -29,10 +29,10 @@ class RecheckedKeysLookupFunctionTest {
     }
 
     @Test
-    void shouldDropRowsWhoseRecheckedKeyDiffers() throws Exception {
+    void shouldDropRowsWhoseKeyDiffers() throws Exception {
         // key row (referenceId, version), rows (referenceId, productName, version)
-        var function = new RecheckedKeysLookupFunction<>(
-                delegate, List.of(RecheckedKeysLookupFunction.RecheckedKey.of(STRING, 0, 0)));
+        var function = new ExactKeyMatchLookupFunction<>(
+                delegate, List.of(ExactKeyMatchLookupFunction.KeyMatch.of(STRING, 0, 0)));
         var keyRow = GenericRowData.of(StringData.fromString("ref-1"), 7);
         var matching = row("ref-1", 7);
         var otherVersion = row("ref-1", 8);
@@ -40,16 +40,16 @@ class RecheckedKeysLookupFunctionTest {
 
         var rows = function.lookup(keyRow);
 
-        // the version is not rechecked, Elasticsearch already matched it
+        // the version is not compared, Elasticsearch already matched it
         assertThat(rows).containsExactly(matching, otherVersion);
     }
 
     @Test
-    void shouldRequireAllRecheckedKeysToMatch() throws Exception {
-        var function = new RecheckedKeysLookupFunction<>(
+    void shouldRequireAllKeysToMatch() throws Exception {
+        var function = new ExactKeyMatchLookupFunction<>(
                 delegate,
-                List.of(RecheckedKeysLookupFunction.RecheckedKey.of(STRING, 0, 0),
-                        RecheckedKeysLookupFunction.RecheckedKey.of(STRING, 1, 1)));
+                List.of(ExactKeyMatchLookupFunction.KeyMatch.of(STRING, 0, 0),
+                        ExactKeyMatchLookupFunction.KeyMatch.of(STRING, 1, 1)));
         var keyRow = GenericRowData.of(StringData.fromString("ref-1"), StringData.fromString("product"));
         var matching = row("ref-1", 7);
         var otherProduct = GenericRowData.of(StringData.fromString("ref-1"), StringData.fromString("other"), 7);
@@ -60,7 +60,7 @@ class RecheckedKeysLookupFunctionTest {
 
     @Test
     void shouldReadKeyAndRowAtTheirOwnPositions() {
-        var key = RecheckedKeysLookupFunction.RecheckedKey.of(STRING, 0, 1);
+        var key = ExactKeyMatchLookupFunction.KeyMatch.of(STRING, 0, 1);
         var keyRow = GenericRowData.of(StringData.fromString("product"));
 
         assertThat(key.matches(keyRow, row("other", 7))).isTrue();
@@ -69,7 +69,7 @@ class RecheckedKeysLookupFunctionTest {
 
     @Test
     void shouldDelegateOpenCloseAndLineage() throws Exception {
-        var function = new RecheckedKeysLookupFunction<>(delegate, List.of());
+        var function = new ExactKeyMatchLookupFunction<>(delegate, List.of());
         var context = mock(FunctionContext.class);
         var vertex = mock(LineageVertex.class);
         when(delegate.getLineageVertex()).thenReturn(vertex);

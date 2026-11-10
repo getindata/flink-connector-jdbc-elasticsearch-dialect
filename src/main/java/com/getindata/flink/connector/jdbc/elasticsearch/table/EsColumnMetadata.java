@@ -17,12 +17,12 @@ import java.util.stream.Collectors;
 @UtilityClass
 class EsColumnMetadata {
 
-    public Map<String, String> textColumnsWithSingleKeywordSubfield(
+    public Map<String, String> readTextColumnsWithKeywordSubfield(
             InternalJdbcConnectionOptions options) {
         var connectionProvider = new SimpleJdbcConnectionProvider(options);
         try {
             var connection = connectionProvider.getOrEstablishConnection();
-            return textColumnsWithSingleKeywordSubfield(connection.getMetaData(), options.getTableName());
+            return readTextColumnsWithKeywordSubfield(connection.getMetaData(), options.getTableName());
         } catch (SQLException | ClassNotFoundException | RuntimeException e) {
             throw new ValidationException(
                     "Could not read the columns of Elasticsearch table '%s'".formatted(options.getTableName()), e);
@@ -32,7 +32,7 @@ class EsColumnMetadata {
     }
 
     @VisibleForTesting
-    Map<String, String> textColumnsWithSingleKeywordSubfield(
+    Map<String, String> readTextColumnsWithKeywordSubfield(
             DatabaseMetaData metaData, String tableName) throws SQLException {
         var columnTypes = columnTypes(metaData, tableName);
         return columnTypes.keySet().stream()

@@ -79,17 +79,23 @@ public class ElasticsearchDynamicTableFactory extends JdbcDynamicTableFactory {
         final ReadableConfig config = FactoryUtil.createTableFactoryHelper(this, context).getOptions();
         final String tableIdentifier = context.getObjectIdentifier().asSummaryString();
         var options = getJdbcOptions(config, context.getClassLoader());
-        var filterHandlingPolicy = config.get(FILTER_HANDLING_POLICY);
-        var textFieldRecheck = EsConnectorOptions.resolveRecheck(config, context.getConfiguration());
         return new ElasticsearchDynamicTableSource(
                 options,
                 getJdbcReadOptions(config),
                 config.get(LookupOptions.MAX_RETRIES),
                 getLookupCache(config),
-                filterHandlingPolicy,
+                config.get(FILTER_HANDLING_POLICY),
                 context.getPhysicalRowDataType(),
                 tableIdentifier,
-                new IgnoredKeywordRecheck(textFieldRecheck, filterHandlingPolicy, options));
+                keywordSubfields(config, context, options));
+    }
+
+    private static KeywordSubfields keywordSubfields(
+            ReadableConfig config, Context context, InternalJdbcConnectionOptions options) {
+        if (EsConnectorOptions.resolveRecheck(config, context.getConfiguration())) {
+            return KeywordSubfields.read(options);
+        }
+        return KeywordSubfields.NONE;
     }
 
     // Copied from parent - private

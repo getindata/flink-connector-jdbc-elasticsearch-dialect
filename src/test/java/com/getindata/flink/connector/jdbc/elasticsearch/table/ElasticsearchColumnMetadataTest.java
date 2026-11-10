@@ -38,7 +38,7 @@ class ElasticsearchColumnMetadataTest {
                         "name_keyword", "KEYWORD");
 
         var columns =
-                EsColumnMetadata.textColumnsWithSingleKeywordSubfield(metaData, "idx");
+                EsColumnMetadata.readTextColumnsWithKeywordSubfield(metaData, "idx");
 
         assertThat(columns)
                 .containsOnly(Map.entry("RawXml", "RawXml.keyword"));
@@ -52,21 +52,21 @@ class ElasticsearchColumnMetadataTest {
                         "multi.keyword", "KEYWORD",
                         "multi.raw", "KEYWORD");
 
-        assertThat(EsColumnMetadata.textColumnsWithSingleKeywordSubfield(metaData, "idx")).isEmpty();
+        assertThat(EsColumnMetadata.readTextColumnsWithKeywordSubfield(metaData, "idx")).isEmpty();
     }
 
     @Test
     void shouldReturnEmptyMapWithoutTextColumns() throws Exception {
         var metaData = metaData("kw", "KEYWORD", "id", "LONG");
 
-        assertThat(EsColumnMetadata.textColumnsWithSingleKeywordSubfield(metaData, "idx")).isEmpty();
+        assertThat(EsColumnMetadata.readTextColumnsWithKeywordSubfield(metaData, "idx")).isEmpty();
     }
 
     @Test
     void shouldEscapeLikeWildcardsInTableName() throws Exception {
         var metaData = metaData();
 
-        EsColumnMetadata.textColumnsWithSingleKeywordSubfield(metaData, "my_index-*");
+        EsColumnMetadata.readTextColumnsWithKeywordSubfield(metaData, "my_index-*");
 
         verify(metaData).getColumns(isNull(), isNull(), eq("my\\_index-*"), isNull());
     }
@@ -88,7 +88,7 @@ class ElasticsearchColumnMetadataTest {
                         .setDialect(new ElasticsearchDialect())
                         .build();
 
-        assertThatThrownBy(() -> EsColumnMetadata.textColumnsWithSingleKeywordSubfield(options))
+        assertThatThrownBy(() -> EsColumnMetadata.readTextColumnsWithKeywordSubfield(options))
                 .isInstanceOf(ValidationException.class)
                 .hasMessage("Could not read the columns of Elasticsearch table 'docs'")
                 .hasCauseInstanceOf(java.sql.SQLException.class);

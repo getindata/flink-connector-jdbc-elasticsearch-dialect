@@ -1,12 +1,11 @@
 package com.getindata.flink.connector.jdbc.elasticsearch.table;
 
 import org.apache.flink.connector.jdbc.core.database.dialect.JdbcDialect;
-import org.apache.flink.connector.jdbc.core.table.source.JdbcFilterPushdownPreparedStatementVisitor;
 import org.apache.flink.streaming.api.lineage.LineageVertexProvider;
-import org.apache.flink.table.expressions.FieldReferenceExpression;
-import org.apache.flink.table.expressions.ResolvedExpression;
 import org.apache.flink.table.functions.LookupFunction;
 import org.apache.flink.table.types.DataType;
+import org.apache.flink.table.types.logical.LogicalType;
+import org.apache.flink.util.Preconditions;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -14,53 +13,50 @@ import java.util.Optional;
 
 record LookupKeys(List<LookupKey> keys) {
 
-    static LookupKeys of(int[][] keys, DataType physicalRowDataType, FilterExtender extender) {
+    static LookupKeys of(int[][] keys, DataType physicalRowDataType, KeywordSubfields keywordSubfields) {
         var fieldNames = DataType.getFieldNames(physicalRowDataType);
         var fieldTypes = DataType.getFieldDataTypes(physicalRowDataType);
         var lookupKeys = new ArrayList<LookupKey>();
         for (int position = 0; position < keys.length; position++) {
-            var fieldPosition = keys[position][0];
-            var column = new FieldReferenceExpression(
-                    fieldNames.get(fieldPosition), fieldTypes.get(fieldPosition), 0, fieldPosition);
-            lookupKeys.add(new LookupKey(column, position, extender.ignoredSubfieldMarker(column)));
+            Preconditions.checkArgument(keys[position].length == 1, "JDBC only support non-nested look up keys");
+            var fieldIndex = keys[position][0];
+            var name = fieldNames.get(fieldIndex);
+            var type = fieldTypes.get(fieldIndex);
+            lookupKeys.add(new LookupKey(
+                    name, type.getLogicalType(), position, fieldIndex, keywordSubfields.keywordSubfieldOf(name, type)));
         }
         return new LookupKeys(List.copyOf(lookupKeys));
+    }
+
+    List<String> names() {
+        return keys.stream().map(LookupKey::name).toList();
     }
 
     List<String> conditions(JdbcDialect dialect) {
         return keys.stream().map(key -> key.condition(dialect)).toList();
     }
 
-    <T extends LookupFunction & LineageVertexProvider> LookupFunction wrap(T lookupFunction) {
-        var recheckedKeys = keys.stream().map(LookupKey::recheckedKey).flatMap(Optional::stream).toList();
-        if (recheckedKeys.isEmpty()) {
+    <T extends LookupFunction & LineageVertexProvider> LookupFunction withExactKeyMatch(T lookupFunction) {
+        var keyMatches = keys.stream().map(LookupKey::keyMatch).flatMap(Optional::stream).toList();
+        if (keyMatches.isEmpty()) {
             return lookupFunction;
         }
-        return new RecheckedKeysLookupFunction<>(lookupFunction, recheckedKeys);
+        return new ExactKeyMatchLookupFunction<>(lookupFunction, keyMatches);
     }
 
     private record LookupKey(
-            FieldReferenceExpression column, int position, Optional<ResolvedExpression> ignoredSubfieldMarker) {
+            String name, LogicalType type, int position, int fieldIndex, Optional<String> keywordSubfield) {
 
-        // an extended key matches also documents with an ignored subfield value
         String condition(JdbcDialect dialect) {
-            var condition = dialect.quoteIdentifier(column.getName()) + " = ?";
-            return ignoredSubfieldMarker
-                    .map(marker -> toSql(marker, dialect))
-                    .map(markerSql -> "(%s OR %s)".formatted(condition, markerSql))
-                    .orElse(condition);
+            var equalsKey = dialect.quoteIdentifier(name) + " = ?";
+            return keywordSubfield
+                    .map(subfield -> "(%s OR %s)"
+                            .formatted(equalsKey, IgnoredKeywordCondition.sql(dialect, name, subfield)))
+                    .orElse(equalsKey);
         }
 
-        Optional<RecheckedKeysLookupFunction.RecheckedKey> recheckedKey() {
-            return ignoredSubfieldMarker.map(marker -> RecheckedKeysLookupFunction.RecheckedKey.of(
-                    column.getOutputDataType().getLogicalType(), position, column.getFieldIndex()));
-        }
-
-        private static String toSql(ResolvedExpression expression, JdbcDialect dialect) {
-            return expression
-                    .accept(new JdbcFilterPushdownPreparedStatementVisitor(dialect::quoteIdentifier))
-                    .orElseThrow(() -> new IllegalStateException("Could not convert to SQL: " + expression))
-                    .getPredicate();
+        Optional<ExactKeyMatchLookupFunction.KeyMatch> keyMatch() {
+            return keywordSubfield.map(ignored -> ExactKeyMatchLookupFunction.KeyMatch.of(type, position, fieldIndex));
         }
     }
 }

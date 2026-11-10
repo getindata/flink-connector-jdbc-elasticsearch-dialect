@@ -231,7 +231,7 @@ class ElasticsearchDynamicTableFactoryTest {
 
     @Test
     void recheckShouldBeEnabledByDefault() {
-        assertThat(recheckSource(Map.of(), new Configuration()).getIgnoredKeywordRecheck().isEnabled()).isTrue();
+        assertThat(recheckSource(Map.of(), new Configuration()).getKeywordSubfields()).isNotSameAs(KeywordSubfields.NONE);
     }
 
     @Test
@@ -239,7 +239,7 @@ class ElasticsearchDynamicTableFactoryTest {
         var session = new Configuration();
         session.setString("elasticsearch-jdbc.filter.ignored-keyword.recheck", "false");
 
-        assertThat(recheckSource(Map.of(), session).getIgnoredKeywordRecheck().isEnabled()).isFalse();
+        assertThat(recheckSource(Map.of(), session).getKeywordSubfields()).isSameAs(KeywordSubfields.NONE);
     }
 
     @Test
@@ -250,9 +250,9 @@ class ElasticsearchDynamicTableFactoryTest {
         sessionTrue.setString("elasticsearch-jdbc.filter.ignored-keyword.recheck", "true");
 
         assertThat(recheckSource(Map.of("filter.ignored-keyword.recheck", "true"), sessionFalse)
-                .getIgnoredKeywordRecheck().isEnabled()).isTrue();
+                .getKeywordSubfields()).isNotSameAs(KeywordSubfields.NONE);
         assertThat(recheckSource(Map.of("filter.ignored-keyword.recheck", "false"), sessionTrue)
-                .getIgnoredKeywordRecheck().isEnabled()).isFalse();
+                .getKeywordSubfields()).isSameAs(KeywordSubfields.NONE);
     }
 
     @Test

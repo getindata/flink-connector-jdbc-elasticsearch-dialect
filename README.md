@@ -289,6 +289,6 @@ because default CatalogFactory does not allow to pass custom catalog properties.
 `ElasticsearchDynamicTableSource` and `ElasticsearchRowDataLookupFunction` contain code copied
 or modified from `flink-connector-jdbc`, marked in the source. The lookup query uses positional parameters (`?`)
 instead of the named parameters of `FieldNamedPreparedStatement`, whose parser breaks on such names.
-With `filter.ignored-keyword.recheck` enabled, `FilterExtender` extends the Flink filter
+With `filter.ignored-keyword.recheck` enabled, `RecheckedFilters` extends the Flink filter
 expressions before they are passed to `JdbcDynamicTableSource#applyFilters`, so the parent builds the scan
 query itself; the planner gets the original expressions back.

@@ -101,7 +101,7 @@ class IgnoredKeywordRecheckPrivilegesITCase extends AbstractTestBase implements 
 
         var getColumns = outcome(() -> {
             try (var connection = connect(user)) {
-                assertThat(EsColumnMetadata.textColumnsWithSingleKeywordSubfield(
+                assertThat(EsColumnMetadata.readTextColumnsWithKeywordSubfield(
                         connection.getMetaData(), INDEX))
                         .isEqualTo(Map.of("text_kw", "text_kw.keyword"));
             }

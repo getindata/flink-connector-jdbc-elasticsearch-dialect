@@ -5,6 +5,7 @@ import lombok.experimental.UtilityClass;
 import org.apache.flink.connector.jdbc.core.datastream.source.JdbcSource;
 import org.apache.flink.connector.jdbc.core.table.source.JdbcFilterPushdownPreparedStatementVisitor;
 import org.apache.flink.connector.jdbc.core.table.source.ParameterizedPredicate;
+import org.apache.flink.connector.jdbc.internal.options.InternalJdbcConnectionOptions;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.transformations.SourceTransformation;
 import org.apache.flink.table.api.DataTypes;
@@ -71,6 +72,14 @@ class SourceTableUtils {
         return ((CallExpression) filter).accept(upstreamVisitor);
     }
 
+    InternalJdbcConnectionOptions unreachableOptions() {
+        return InternalJdbcConnectionOptions.builder()
+                .setDBUrl("jdbc:elasticsearch://localhost:1")
+                .setTableName("idx")
+                .setDialect(new ElasticsearchDialect())
+                .build();
+    }
+
     ElasticsearchDynamicTableSource createSource(ResolvedSchema schema, Map<String, String> options) {
         return (ElasticsearchDynamicTableSource) FactoryMocks.createTableSource(schema, options);
     }
@@ -88,8 +97,8 @@ class SourceTableUtils {
 
     ElasticsearchRowDataLookupFunction lookupFunction(ElasticsearchDynamicTableSource source, int keyIndex) {
         var function = runtimeLookupFunction(source, keyIndex);
-        if (function instanceof RecheckedKeysLookupFunction<?> rechecked) {
-            return (ElasticsearchRowDataLookupFunction) rechecked.getDelegate();
+        if (function instanceof ExactKeyMatchLookupFunction<?> exactKeyMatch) {
+            return (ElasticsearchRowDataLookupFunction) exactKeyMatch.getDelegate();
         }
         return (ElasticsearchRowDataLookupFunction) function;
     }

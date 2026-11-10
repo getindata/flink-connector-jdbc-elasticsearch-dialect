@@ -18,7 +18,7 @@ import java.util.List;
 import java.util.Objects;
 
 @RequiredArgsConstructor
-public class RecheckedKeysLookupFunction<T extends LookupFunction & LineageVertexProvider> extends LookupFunction
+public class ExactKeyMatchLookupFunction<T extends LookupFunction & LineageVertexProvider> extends LookupFunction
         implements LineageVertexProvider {
 
     @Serial
@@ -27,7 +27,7 @@ public class RecheckedKeysLookupFunction<T extends LookupFunction & LineageVerte
     @NonNull
     private final T delegate;
     @NonNull
-    private final List<RecheckedKey> recheckedKeys;
+    private final List<KeyMatch> keyMatches;
 
     @VisibleForTesting
     T getDelegate() {
@@ -35,8 +35,8 @@ public class RecheckedKeysLookupFunction<T extends LookupFunction & LineageVerte
     }
 
     @VisibleForTesting
-    List<RecheckedKey> getRecheckedKeys() {
-        return recheckedKeys;
+    List<KeyMatch> getKeyMatches() {
+        return keyMatches;
     }
 
     @Override
@@ -46,11 +46,11 @@ public class RecheckedKeysLookupFunction<T extends LookupFunction & LineageVerte
 
     @Override
     public Collection<RowData> lookup(RowData keyRow) throws IOException {
-        return delegate.lookup(keyRow).stream().filter(row -> matchesKeys(keyRow, row)).toList();
+        return delegate.lookup(keyRow).stream().filter(row -> matchesAllKeys(keyRow, row)).toList();
     }
 
-    private boolean matchesKeys(RowData keyRow, RowData row) {
-        return recheckedKeys.stream().allMatch(key -> key.matches(keyRow, row));
+    private boolean matchesAllKeys(RowData keyRow, RowData row) {
+        return keyMatches.stream().allMatch(key -> key.matches(keyRow, row));
     }
 
     @Override
@@ -63,10 +63,10 @@ public class RecheckedKeysLookupFunction<T extends LookupFunction & LineageVerte
         return delegate.getLineageVertex();
     }
 
-    public record RecheckedKey(RowData.FieldGetter inKeyRow, RowData.FieldGetter inRow) implements Serializable {
+    public record KeyMatch(RowData.FieldGetter inKeyRow, RowData.FieldGetter inRow) implements Serializable {
 
-        static RecheckedKey of(LogicalType type, int keyPosition, int fieldPosition) {
-            return new RecheckedKey(
+        static KeyMatch of(LogicalType type, int keyPosition, int fieldPosition) {
+            return new KeyMatch(
                     RowData.createFieldGetter(type, keyPosition), RowData.createFieldGetter(type, fieldPosition));
         }
 
