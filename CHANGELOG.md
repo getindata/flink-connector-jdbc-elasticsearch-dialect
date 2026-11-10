@@ -17,8 +17,9 @@
     Set `'filter.ignored-keyword.handling' = 'none'` to restore the previous behaviour.
 -   **Behaviour change:** with `recheck` the connector sets the connection property
     `field.multi.value.leniency=false`, so queries returning multi-valued fields fail with
-    `Arrays (returned by [...]) are not supported` instead of returning the first value, which the recheck would silently drop. An explicit
-    `field.multi.value.leniency=true` together with `recheck` is rejected; use `none` for such tables.
+    `Arrays (returned by [...]) are not supported` instead of returning the first value, which the
+    recheck would silently drop. An explicit `field.multi.value.leniency=true` together with `recheck`
+    is rejected; use `none` for such tables.
 -   `ElasticsearchDynamicTableSource` no longer has a public constructor; sources are created by the table factory.
 -   The public constructor of `ElasticsearchRowDataLookupFunction` takes the lookup keys instead of field and key lists.
 
