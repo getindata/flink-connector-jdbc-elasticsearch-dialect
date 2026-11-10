@@ -16,6 +16,7 @@
     Flink, which compares case-sensitively also when the subfield has a normalizer (e.g. `lowercase`).
     Set `'filter.ignored-keyword.recheck' = 'false'` to restore the previous behaviour.
 -   `ElasticsearchDynamicTableSource` no longer has a public constructor; sources are created by the table factory.
+-   The public constructor of `ElasticsearchRowDataLookupFunction` takes the lookup keys instead of field and key lists.
 
 ## [0.6.0] - 2026-11-09
 

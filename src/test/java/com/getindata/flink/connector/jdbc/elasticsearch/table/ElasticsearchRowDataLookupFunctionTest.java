@@ -260,18 +260,12 @@ class ElasticsearchRowDataLookupFunctionTest {
 
     @Test
     void shouldBindTimestampKey() throws Exception {
-        var types = List.of(DataTypes.STRING(), DataTypes.TIMESTAMP(3));
-        ElasticsearchRowDataLookupFunction function =
-                new ElasticsearchRowDataLookupFunction(
-                        connectionOptions(TABLE_NAME),
-                        0,
-                        List.of(REFERENCE_ID, TIMESTAMP),
-                        types,
-                        List.of(TIMESTAMP),
-                        lookupKeyConditions(List.of(TIMESTAMP)),
-                        rowType(List.of(REFERENCE_ID, TIMESTAMP), types),
-                        List.of(),
-                        new Serializable[0]);
+        ElasticsearchRowDataLookupFunction function = functionOver(
+                TABLE_NAME,
+                List.of(REFERENCE_ID, TIMESTAMP),
+                List.of(DataTypes.STRING(), DataTypes.TIMESTAMP(3)),
+                List.of(TIMESTAMP),
+                List.of());
         FieldNamedPreparedStatement statement = function.prepareStatement(connection);
         LocalDateTime timestamp = LocalDateTime.of(2020, 1, 1, 10, 0);
 
@@ -305,42 +299,6 @@ class ElasticsearchRowDataLookupFunctionTest {
 
         verify(preparedStatement).setString(1, "loc-1");
         verify(preparedStatement).setObject(2, "x");
-    }
-
-    @Test
-    void shouldRejectKeyThatIsNotAField() {
-        assertThatThrownBy(
-                        () ->
-                                new ElasticsearchRowDataLookupFunction(
-                                        connectionOptions(TABLE_NAME),
-                                        0,
-                                        List.of(PRODUCT_NAME),
-                                        List.of(DataTypes.STRING()),
-                                        List.of(REFERENCE_ID),
-                                        lookupKeyConditions(List.of(REFERENCE_ID)),
-                                        RowType.of(DataTypes.STRING().getLogicalType()),
-                                        List.of(),
-                                        new Serializable[0]))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining(REFERENCE_ID);
-    }
-
-    @Test
-    void shouldRejectLookupKeyConditionsNotMatchingKeys() {
-        assertThatThrownBy(
-                        () ->
-                                new ElasticsearchRowDataLookupFunction(
-                                        connectionOptions(TABLE_NAME),
-                                        0,
-                                        List.of(REFERENCE_ID),
-                                        List.of(DataTypes.STRING()),
-                                        List.of(REFERENCE_ID),
-                                        List.of(),
-                                        RowType.of(DataTypes.STRING().getLogicalType()),
-                                        List.of(),
-                                        new Serializable[0]))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("Expected a condition for every key.");
     }
 
     // --- upstream behaviour worked around by ElasticsearchRowDataLookupFunction
@@ -397,16 +355,11 @@ class ElasticsearchRowDataLookupFunctionTest {
             List<String> keyNames,
             List<String> predicates,
             Serializable... pushdownParams) {
-        var fieldNames = List.of(REFERENCE_ID, PRODUCT_NAME, VERSION);
-        var types = List.of(DataTypes.STRING(), DataTypes.STRING(), DataTypes.INT());
-        return new ElasticsearchRowDataLookupFunction(
-                connectionOptions(tableName),
-                0,
-                fieldNames,
-                types,
+        return functionOver(
+                tableName,
+                List.of(REFERENCE_ID, PRODUCT_NAME, VERSION),
+                List.of(DataTypes.STRING(), DataTypes.STRING(), DataTypes.INT()),
                 keyNames,
-                lookupKeyConditions(keyNames),
-                rowType(fieldNames, types),
                 predicates,
                 pushdownParams);
     }
@@ -414,16 +367,29 @@ class ElasticsearchRowDataLookupFunctionTest {
     /** Function over (geo:loc STRING, what? STRING) with key geo:loc. */
     private ElasticsearchRowDataLookupFunction specialCharacterFunction(
             String tableName, List<String> predicates, Serializable... pushdownParams) {
-        var fieldNames = List.of(GEO, QUESTION);
-        var types = List.of(DataTypes.STRING(), DataTypes.STRING());
+        return functionOver(
+                tableName,
+                List.of(GEO, QUESTION),
+                List.of(DataTypes.STRING(), DataTypes.STRING()),
+                List.of(GEO),
+                predicates,
+                pushdownParams);
+    }
+
+    private ElasticsearchRowDataLookupFunction functionOver(
+            String tableName,
+            List<String> fieldNames,
+            List<DataType> types,
+            List<String> keyNames,
+            List<String> predicates,
+            Serializable... pushdownParams) {
+        var physicalRow = physicalRow(fieldNames, types);
+        var keys = keyNames.stream().map(keyName -> new int[] {fieldNames.indexOf(keyName)}).toArray(int[][]::new);
         return new ElasticsearchRowDataLookupFunction(
                 connectionOptions(tableName),
                 0,
-                fieldNames,
-                types,
-                List.of(GEO),
-                lookupKeyConditions(List.of(GEO)),
-                rowType(fieldNames, types),
+                LookupKeys.of(keys, physicalRow, KeywordSubfields.NONE),
+                (RowType) physicalRow.getLogicalType(),
                 predicates,
                 pushdownParams);
     }
@@ -432,11 +398,11 @@ class ElasticsearchRowDataLookupFunctionTest {
         return keyNames.stream().map(keyName -> dialect.quoteIdentifier(keyName) + " = ?").toList();
     }
 
-    private static RowType rowType(List<String> fieldNames, List<DataType> types) {
+    private static DataType physicalRow(List<String> fieldNames, List<DataType> types) {
         var fields = IntStream.range(0, fieldNames.size())
                 .mapToObj(i -> DataTypes.FIELD(fieldNames.get(i), types.get(i)))
                 .toArray(DataTypes.Field[]::new);
-        return (RowType) DataTypes.ROW(fields).getLogicalType();
+        return DataTypes.ROW(fields);
     }
 
     private InternalJdbcConnectionOptions connectionOptions(String tableName) {

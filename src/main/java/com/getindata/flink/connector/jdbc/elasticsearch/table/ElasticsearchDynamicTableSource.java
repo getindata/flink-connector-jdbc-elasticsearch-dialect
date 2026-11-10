@@ -104,10 +104,7 @@ public class ElasticsearchDynamicTableSource extends JdbcDynamicTableSource {
                 new ElasticsearchRowDataLookupFunction(
                         options,
                         lookupMaxRetryTimes,
-                        DataType.getFieldNames(physicalRowDataType),
-                        DataType.getFieldDataTypes(physicalRowDataType),
-                        lookupKeys.names(),
-                        lookupKeys.conditions(options.getDialect()),
+                        lookupKeys,
                         rowType,
                         List.copyOf(resolvedPredicates),
                         pushdownParams.clone());

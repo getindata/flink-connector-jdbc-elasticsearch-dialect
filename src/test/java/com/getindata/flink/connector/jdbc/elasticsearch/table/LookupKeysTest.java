@@ -73,10 +73,11 @@ class LookupKeysTest {
     }
 
     @Test
-    void shouldReturnKeyNamesInLookupOrder() {
-        var lookupKeys = LookupKeys.of(new int[][] {{1}, {0}}, PHYSICAL_ROW, KeywordSubfields.NONE);
+    void shouldReturnKeyTypesInLookupOrder() {
+        var lookupKeys = LookupKeys.of(new int[][] {{2}, {0}}, PHYSICAL_ROW, KeywordSubfields.NONE);
 
-        assertThat(lookupKeys.names()).containsExactly(NAME, REFERENCE_ID);
+        assertThat(lookupKeys.types())
+                .containsExactly(DataTypes.BOOLEAN().getLogicalType(), DataTypes.STRING().getLogicalType());
     }
 
     @Test

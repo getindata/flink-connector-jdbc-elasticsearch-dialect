@@ -28,8 +28,8 @@ record LookupKeys(List<LookupKey> keys) {
         return new LookupKeys(List.copyOf(lookupKeys));
     }
 
-    List<String> names() {
-        return keys.stream().map(LookupKey::name).toList();
+    List<LogicalType> types() {
+        return keys.stream().map(LookupKey::type).toList();
     }
 
     List<String> conditions(JdbcDialect dialect) {

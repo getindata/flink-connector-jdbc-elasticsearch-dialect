@@ -56,6 +56,28 @@ class ElasticsearchColumnMetadataTest {
     }
 
     @Test
+    void shouldMapDottedTextColumnsToKeywordDescendants() throws Exception {
+        var metaData =
+                metaData(
+                        "order.details.name", "TEXT",
+                        "order.details.name.keyword", "KEYWORD",
+                        "outer", "TEXT",
+                        "outer.inner", "TEXT",
+                        "outer.inner.keyword", "KEYWORD",
+                        "deep", "TEXT",
+                        "deep.x.y.keyword", "KEYWORD",
+                        "trailing", "TEXT",
+                        "trailing.", "KEYWORD");
+
+        assertThat(EsColumnMetadata.readTextColumnsWithKeywordSubfield(metaData, "idx"))
+                .containsOnly(
+                        Map.entry("order.details.name", "order.details.name.keyword"),
+                        Map.entry("outer", "outer.inner.keyword"),
+                        Map.entry("outer.inner", "outer.inner.keyword"),
+                        Map.entry("deep", "deep.x.y.keyword"));
+    }
+
+    @Test
     void shouldReturnEmptyMapWithoutTextColumns() throws Exception {
         var metaData = metaData("kw", "KEYWORD", "id", "LONG");
 

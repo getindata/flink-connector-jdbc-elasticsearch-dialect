@@ -9,10 +9,15 @@ import org.elasticsearch.xpack.sql.jdbc.EsType;
 
 import java.sql.DatabaseMetaData;
 import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
 
 @UtilityClass
 class EsColumnMetadata {
@@ -35,9 +40,15 @@ class EsColumnMetadata {
     Map<String, String> readTextColumnsWithKeywordSubfield(
             DatabaseMetaData metaData, String tableName) throws SQLException {
         var columnTypes = columnTypes(metaData, tableName);
-        return columnTypes.keySet().stream()
+        var textColumns = columnTypes.keySet().stream()
                 .filter(column -> hasType(columnTypes, column, EsType.TEXT))
-                .map(column -> Map.entry(column, keywordSubfields(columnTypes, column)))
+                .collect(Collectors.toSet());
+        Map<String, List<String>> keywordSubfields = new HashMap<>();
+        columnTypes.keySet().stream()
+                .filter(column -> hasType(columnTypes, column, EsType.KEYWORD))
+                .forEach(keyword -> textParents(textColumns, keyword).forEach(parent ->
+                        keywordSubfields.computeIfAbsent(parent, ignored -> new ArrayList<>()).add(keyword)));
+        return keywordSubfields.entrySet().stream()
                 // ES SQL rejects filters on a text column with several keyword subfields
                 .filter(columnSubfields -> columnSubfields.getValue().size() == 1)
                 .collect(Collectors.toMap(Map.Entry::getKey, columnSubfields -> columnSubfields.getValue().get(0)));
@@ -55,12 +66,11 @@ class EsColumnMetadata {
         return columnTypes;
     }
 
-    private List<String> keywordSubfields(Map<String, String> columnTypes, String column) {
-        var prefix = column + ".";
-        return columnTypes.keySet().stream()
-                .filter(candidate -> candidate.startsWith(prefix) && candidate.length() > prefix.length())
-                .filter(candidate -> hasType(columnTypes, candidate, EsType.KEYWORD))
-                .collect(Collectors.toList());
+    private Stream<String> textParents(Set<String> textColumns, String column) {
+        return IntStream.range(0, column.length() - 1)
+                .filter(i -> column.charAt(i) == '.')
+                .mapToObj(i -> column.substring(0, i))
+                .filter(textColumns::contains);
     }
 
     private boolean hasType(Map<String, String> columnTypes, String column, EsType type) {

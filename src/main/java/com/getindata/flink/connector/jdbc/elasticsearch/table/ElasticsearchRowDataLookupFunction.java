@@ -36,7 +36,6 @@ import org.apache.flink.streaming.api.lineage.LineageVertexProvider;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.functions.FunctionContext;
 import org.apache.flink.table.functions.LookupFunction;
-import org.apache.flink.table.types.DataType;
 import org.apache.flink.table.types.logical.LogicalType;
 import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.table.types.utils.LegacyTypeInfoDataTypeConverter;
@@ -53,8 +52,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
-
-import static org.apache.flink.util.Preconditions.checkArgument;
 
 /**
  * Modified copy of JdbcRowDataLookupFunction. The lookup query uses positional parameters
@@ -84,27 +81,18 @@ public class ElasticsearchRowDataLookupFunction extends LookupFunction implement
     public ElasticsearchRowDataLookupFunction(
             @NonNull InternalJdbcConnectionOptions options,
             int maxRetryTimes,
-            @NonNull List<String> fieldNames,
-            @NonNull List<DataType> fieldTypes,
-            @NonNull List<String> keyNames,
-            @NonNull List<String> lookupKeyConditions,
-            RowType rowType,
+            @NonNull LookupKeys lookupKeys,
+            @NonNull RowType rowType,
             @NonNull List<String> resolvedPredicates,
             @NonNull Serializable[] pushdownParams) {
         this.connectionProvider = new SimpleJdbcConnectionProvider(options);
-        var keyTypes = keyNames.stream()
-                .map(s -> {
-                    checkArgument(fieldNames.contains(s), "keyName %s can't find in fieldNames %s.", s, fieldNames);
-                    return fieldTypes.get(fieldNames.indexOf(s));
-                }).toList();
         this.maxRetryTimes = maxRetryTimes;
         JdbcDialect jdbcDialect = options.getDialect();
-        this.numberOfKeys = keyNames.size();
-        checkArgument(lookupKeyConditions.size() == numberOfKeys, "Expected a condition for every key.");
-        this.query = buildLookupQuery(jdbcDialect, options.getTableName(), fieldNames, lookupKeyConditions);
+        this.numberOfKeys = lookupKeys.keys().size();
+        this.query = buildLookupQuery(
+                jdbcDialect, options.getTableName(), rowType.getFieldNames(), lookupKeys.conditions(jdbcDialect));
         this.jdbcDialectConverter = jdbcDialect.getRowConverter(rowType);
-        this.producedType = RowType.of(
-                keyTypes.stream().map(DataType::getLogicalType).toArray(LogicalType[]::new));
+        this.producedType = RowType.of(lookupKeys.types().toArray(LogicalType[]::new));
         this.lookupKeyRowConverter = jdbcDialect.getRowConverter(producedType);
         this.resolvedPredicates = resolvedPredicates;
         this.pushdownParams = pushdownParams;

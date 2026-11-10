@@ -49,7 +49,7 @@ final class KeywordSubfields {
             return givenSubfields;
         }
         if (readSubfields == null) {
-            readSubfields = EsColumnMetadata.singleKeywordSubfieldsOfTextColumns(options);
+            readSubfields = EsColumnMetadata.readTextColumnsWithKeywordSubfield(options);
             LOG.debug("Conditions on text columns with a single keyword subfield of {} are rechecked by Flink: {}",
                     options.getTableName(), readSubfields);
         }
