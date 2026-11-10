@@ -20,8 +20,6 @@
     `Arrays (returned by [...]) are not supported` instead of returning the first value, which the
     recheck would silently drop. An explicit `field.multi.value.leniency=true` together with `recheck`
     is rejected; use `none` for such tables.
--   `ElasticsearchDynamicTableSource` no longer has a public constructor; sources are created by the table factory.
--   The public constructor of `ElasticsearchRowDataLookupFunction` takes the lookup keys instead of field and key lists.
 
 ## [0.6.0] - 2026-11-09
 
