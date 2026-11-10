@@ -13,6 +13,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class StrictMultiValueTest {
 
     private static final String URL = "jdbc:es://localhost:9200";
+    private static final String LENIENT_REJECTED = """
+            'field.multi.value.leniency' = 'true' cannot be used with 'filter.ignored-keyword.handling' = 'recheck', \
+            remove it or set 'filter.ignored-keyword.handling' = 'none'.""";
 
     @ParameterizedTest
     @ValueSource(strings = {
@@ -45,8 +48,7 @@ class StrictMultiValueTest {
     void shouldRejectLenientUrl(String url) {
         assertThatThrownBy(() -> enforce(url))
                 .isInstanceOf(ValidationException.class)
-                .hasMessageContaining("'field.multi.value.leniency' = 'true' cannot be used with")
-                .hasMessageContaining("'filter.ignored-keyword.handling' = 'none'");
+                .hasMessage(LENIENT_REJECTED);
     }
 
     @ParameterizedTest
@@ -54,7 +56,7 @@ class StrictMultiValueTest {
     void shouldRejectLenientProperty(String value) {
         assertThatThrownBy(() -> StrictMultiValue.enforce(URL, leniency(value)))
                 .isInstanceOf(ValidationException.class)
-                .hasMessageContaining("'field.multi.value.leniency' = 'true' cannot be used with");
+                .hasMessage(LENIENT_REJECTED);
     }
 
     @Test
