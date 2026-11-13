@@ -30,12 +30,15 @@ import org.elasticsearch.client.Request;
 import org.elasticsearch.client.RestClient;
 import org.junit.jupiter.api.Assertions;
 
+import javax.annotation.Nullable;
+
+import java.io.Closeable;
 import java.io.IOException;
 
 import static java.lang.String.format;
 
 /** Elasticsearch REST API client. */
-public class ElasticsearchRestClient {
+public class ElasticsearchRestClient implements Closeable {
 
     private static final ObjectMapper OBJECT_MAPPER =
             new ObjectMapper().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
@@ -88,6 +91,20 @@ public class ElasticsearchRestClient {
         Request request = new Request("PUT", format("/%s/_bulk?refresh=true", indexName));
         request.setJsonEntity(content);
         executeRequest(request);
+    }
+
+    public void performRequest(String method, String endpoint, @Nullable String jsonBody)
+            throws IOException {
+        var request = new Request(method, endpoint);
+        if (jsonBody != null) {
+            request.setJsonEntity(jsonBody);
+        }
+        executeRequest(request);
+    }
+
+    @Override
+    public void close() throws IOException {
+        restClient.close();
     }
 
     private <T> T executeRequest(Request request, Class<T> outputClass) throws IOException {

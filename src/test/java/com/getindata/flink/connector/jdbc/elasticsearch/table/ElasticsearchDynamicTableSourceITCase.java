@@ -23,6 +23,7 @@ import com.getindata.flink.connector.jdbc.elasticsearch.ElasticsearchTestBase;
 import com.getindata.flink.connector.jdbc.elasticsearch.database.dialect.ElasticsearchDialect;
 import com.getindata.flink.connector.jdbc.elasticsearch.testutils.ElasticsearchMetadata;
 import com.getindata.flink.connector.jdbc.elasticsearch.testutils.ElasticsearchRestClient;
+import com.getindata.flink.connector.jdbc.elasticsearch.testutils.FlinkTables;
 import org.apache.flink.connector.jdbc.testutils.tables.TableRow;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.table.api.DataTypes;
@@ -32,7 +33,6 @@ import org.apache.flink.table.connector.source.lookup.cache.LookupCache;
 import org.apache.flink.table.data.GenericRowData;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.data.TimestampData;
-import org.apache.flink.table.planner.factories.TestValuesTableFactory;
 import org.apache.flink.table.runtime.functions.table.lookup.LookupCacheManager;
 import org.apache.flink.table.test.lookup.cache.LookupCacheAssert;
 import org.apache.flink.test.util.AbstractTestBase;
@@ -252,24 +252,15 @@ public class ElasticsearchDynamicTableSourceITCase extends AbstractTestBase
                 inputTable.getCreateQueryForFlink(getMetadata(), "jdbc_lookup", cachingOptions));
 
         // Create and prepare a value source
-        String dataId =
-                TestValuesTableFactory.registerData(
-                        Arrays.asList(
-                                Row.of(1L, "Alice"),
-                                Row.of(1L, "Alice"),
-                                Row.of(2L, "Bob"),
-                                Row.of(3L, "Charlie")));
-        tEnv.executeSql(
-                String.format(
-                        "CREATE TABLE value_source ( "
-                                + " `id` BIGINT, "
-                                + " `name` STRING, "
-                                + " `proctime` AS PROCTIME()"
-                                + ") WITH ("
-                                + " 'connector' = 'values', "
-                                + " 'data-id' = '%s'"
-                                + ")",
-                        dataId));
+        FlinkTables.createLookupProbeTable(
+                tEnv,
+                "value_source",
+                "`id` BIGINT, `name` STRING",
+                Arrays.asList(
+                        Row.of(1L, "Alice"),
+                        Row.of(1L, "Alice"),
+                        Row.of(2L, "Bob"),
+                        Row.of(3L, "Charlie")));
 
         if (caching == Caching.ENABLE_CACHE) {
             LookupCacheManager.keepCacheOnRelease(true);
@@ -399,57 +390,33 @@ public class ElasticsearchDynamicTableSourceITCase extends AbstractTestBase
                     "geo:loc": "loc-2", "a\\"b": "loc-2", "what?": "no"}
                     """);
 
-            String cachingOptions =
-                    caching == Caching.ENABLE_CACHE
-                            ? ", 'lookup.cache' = 'PARTIAL', 'lookup.partial-cache.max-rows' = '100'"
-                            : "";
-            tEnv.executeSql(
-                    """
-                    CREATE TABLE es_lookup (
-                      `order.details.referenceId` STRING,
-                      `user.name` STRING,
-                      `order.details.attributes.productName` STRING,
-                      `@version` INT,
-                      `geo:loc` STRING,
-                      `a"b` STRING,
-                      `what?` STRING
-                    ) WITH (
-                      'connector' = '%s',
-                      'url' = '%s',
-                      'table-name' = '%s',
-                      'username' = '%s',
-                      'password' = '%s'
-                      %s
-                    )""".formatted(
-                            ElasticsearchDynamicTableFactory.IDENTIFIER,
-                            getMetadata().getJdbcUrl(),
-                            indexName,
-                            getMetadata().getUsername(),
-                            getMetadata().getPassword(),
-                            cachingOptions));
+            elasticsearchTable(
+                            "es_lookup",
+                            """
+                            `order.details.referenceId` STRING,
+                            `user.name` STRING,
+                            `order.details.attributes.productName` STRING,
+                            `@version` INT,
+                            `geo:loc` STRING,
+                            `a"b` STRING,
+                            `what?` STRING""",
+                            indexName)
+                    .options(FlinkTables.partialCacheOptions(caching == Caching.ENABLE_CACHE))
+                    .build()
+                    .createIn(tEnv);
 
-            String dataId =
-                    TestValuesTableFactory.registerData(
-                            List.of(
-                                    Row.of("REF-AAAA", "alice", "loc-1", 1),
-                                    Row.of("REF-BBBB", "bob", "loc-2", 2),
-                                    Row.of("REF-BBBB", "carol", "loc-2", 3),
-                                    // no matching document
-                                    Row.of("REF-CCCC", "dave", "loc-9", 9),
-                                    // null lookup keys
-                                    Row.of(null, "eve", null, null)));
-            tEnv.executeSql(
-                    """
-                    CREATE TABLE events (
-                      `event.ReferenceId` STRING,
-                      `user` STRING,
-                      `location` STRING,
-                      `version` INT,
-                      `proctime` AS PROCTIME()
-                    ) WITH (
-                      'connector' = 'values',
-                      'data-id' = '%s'
-                    )""".formatted(dataId));
+            FlinkTables.createLookupProbeTable(
+                    tEnv,
+                    "events",
+                    "`event.ReferenceId` STRING, `user` STRING, `location` STRING, `version` INT",
+                    List.of(
+                            Row.of("REF-AAAA", "alice", "loc-1", 1),
+                            Row.of("REF-BBBB", "bob", "loc-2", 2),
+                            Row.of("REF-BBBB", "carol", "loc-2", 3),
+                            // no matching document
+                            Row.of("REF-CCCC", "dave", "loc-9", 9),
+                            // null lookup keys
+                            Row.of(null, "eve", null, null)));
 
             if (caching == Caching.ENABLE_CACHE) {
                 LookupCacheManager.keepCacheOnRelease(true);

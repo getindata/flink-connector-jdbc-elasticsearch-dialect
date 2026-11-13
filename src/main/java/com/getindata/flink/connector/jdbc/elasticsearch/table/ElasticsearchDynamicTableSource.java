@@ -20,6 +20,7 @@ package com.getindata.flink.connector.jdbc.elasticsearch.table;
 
 import lombok.EqualsAndHashCode;
 import org.apache.commons.lang3.ArrayUtils;
+import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.connector.jdbc.core.table.FilterHandlingPolicy;
 import org.apache.flink.connector.jdbc.core.table.source.JdbcDynamicTableSource;
 import org.apache.flink.connector.jdbc.core.table.source.JdbcFilterPushdownPreparedStatementVisitor;
@@ -35,7 +36,6 @@ import org.apache.flink.table.expressions.CallExpression;
 import org.apache.flink.table.expressions.ResolvedExpression;
 import org.apache.flink.table.types.DataType;
 import org.apache.flink.table.types.logical.RowType;
-import org.apache.flink.util.Preconditions;
 
 import javax.annotation.Nullable;
 
@@ -63,15 +63,17 @@ public class ElasticsearchDynamicTableSource extends JdbcDynamicTableSource {
     // not part of equals/hashCode, as in the parent
     @EqualsAndHashCode.Exclude
     private final String tableIdentifier;
+    private final KeywordSubfields keywordSubfields;
 
-    public ElasticsearchDynamicTableSource(
+    ElasticsearchDynamicTableSource(
             InternalJdbcConnectionOptions options,
             JdbcReadOptions readOptions,
             int lookupMaxRetryTimes,
             @Nullable LookupCache cache,
             FilterHandlingPolicy filterHandlingPolicy,
             DataType physicalRowDataType,
-            String tableIdentifier) {
+            String tableIdentifier,
+            KeywordSubfields keywordSubfields) {
         super(options,
             readOptions,
             lookupMaxRetryTimes,
@@ -86,28 +88,32 @@ public class ElasticsearchDynamicTableSource extends JdbcDynamicTableSource {
         this.filterHandlingPolicy = filterHandlingPolicy;
         this.physicalRowDataType = physicalRowDataType;
         this.tableIdentifier = tableIdentifier;
+        this.keywordSubfields = keywordSubfields;
+    }
+
+    @VisibleForTesting
+    KeywordSubfields getKeywordSubfields() {
+        return keywordSubfields;
+    }
+
+    @VisibleForTesting
+    InternalJdbcConnectionOptions getConnectionOptions() {
+        return options;
     }
 
     @Override
     public LookupRuntimeProvider getLookupRuntimeProvider(LookupContext context) {
-        String[] keyNames = new String[context.getKeys().length];
-        for (int i = 0; i < keyNames.length; i++) {
-            int[] innerKeyArr = context.getKeys()[i];
-            Preconditions.checkArgument(
-                    innerKeyArr.length == 1, "JDBC only support non-nested look up keys");
-            keyNames[i] = DataType.getFieldNames(physicalRowDataType).get(innerKeyArr[0]);
-        }
         final RowType rowType = (RowType) physicalRowDataType.getLogicalType();
-        ElasticsearchRowDataLookupFunction lookupFunction =
+        var lookupKeys = LookupKeys.of(context.getKeys(), physicalRowDataType, keywordSubfields);
+        var esLookupFunction =
                 new ElasticsearchRowDataLookupFunction(
                         options,
                         lookupMaxRetryTimes,
-                        DataType.getFieldNames(physicalRowDataType).toArray(new String[0]),
-                        DataType.getFieldDataTypes(physicalRowDataType).toArray(new DataType[0]),
-                        keyNames,
+                        lookupKeys,
                         rowType,
                         List.copyOf(resolvedPredicates),
                         pushdownParams.clone());
+        var lookupFunction = lookupKeys.withExactKeyMatch(esLookupFunction);
         if (cache != null) {
             return PartialCachingLookupProvider.of(lookupFunction, cache);
         } else {
@@ -129,7 +135,12 @@ public class ElasticsearchDynamicTableSource extends JdbcDynamicTableSource {
 
     @Override
     public Result applyFilters(List<ResolvedExpression> filters) {
-        Result result = super.applyFilters(filters);
+        // nothing is pushed down, so the keyword subfields need not be read
+        if (filterHandlingPolicy == FilterHandlingPolicy.NEVER) {
+            return super.applyFilters(filters);
+        }
+        var recheckedFilters = RecheckedFilters.of(filters, keywordSubfields);
+        Result result = super.applyFilters(recheckedFilters.filters());
         // Mirror the predicates accepted by the parent, in the same order, so that the lookup
         // function receives the same SQL fragments and parameters as the scan.
         for (ResolvedExpression filter : result.getAcceptedFilters()) {
@@ -137,11 +148,11 @@ public class ElasticsearchDynamicTableSource extends JdbcDynamicTableSource {
                     parseFilterToPredicate(filter).orElseThrow(
                             () -> new IllegalStateException(
                                     "Filter accepted for push down could not be converted to a predicate: " + filter));
-            acceptedFilters.add(filter);
+            acceptedFilters.add(recheckedFilters.originalOf(filter));
             resolvedPredicates.add(predicate.getPredicate());
             pushdownParams = ArrayUtils.addAll(pushdownParams, predicate.getParameters());
         }
-        return result;
+        return recheckedFilters.toResult(result);
     }
 
     // copy JdbcDynamicTableSource#parseFilterToPredicate, private in the parent
@@ -164,7 +175,8 @@ public class ElasticsearchDynamicTableSource extends JdbcDynamicTableSource {
                         cache,
                         filterHandlingPolicy,
                         physicalRowDataType,
-                        tableIdentifier);
+                        tableIdentifier,
+                        keywordSubfields);
         // The parent's push down state is private, so it is rebuilt by re-applying the same
         // abilities. Filters are referenced by name, so re-applying them after projection is safe.
         if (!acceptedFilters.isEmpty()) {

@@ -18,6 +18,8 @@
 
 package com.getindata.flink.connector.jdbc.elasticsearch;
 
+import com.getindata.flink.connector.jdbc.elasticsearch.table.ElasticsearchDynamicTableFactory;
+import com.getindata.flink.connector.jdbc.elasticsearch.testutils.ConnectorTable;
 import com.getindata.flink.connector.jdbc.elasticsearch.testutils.ElasticsearchDatabase;
 import org.apache.flink.connector.jdbc.testutils.DatabaseMetadata;
 import org.apache.flink.connector.jdbc.testutils.DatabaseTest;
@@ -32,5 +34,17 @@ public interface ElasticsearchTestBase extends DatabaseTest {
     @Override
     default DatabaseMetadata getMetadata() {
         return ElasticsearchDatabase.getMetadata();
+    }
+
+    default ConnectorTable.ConnectorTableBuilder elasticsearchTable(String name, String columns, String index) {
+        var metadata = getMetadata();
+        return ConnectorTable.builder()
+                .connector(ElasticsearchDynamicTableFactory.IDENTIFIER)
+                .name(name)
+                .columns(columns)
+                .url(metadata.getJdbcUrl())
+                .index(index)
+                .username(metadata.getUsername())
+                .password(metadata.getPassword());
     }
 }
