@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-13
+
 -   Fix documents silently missing from the result of filters and lookup joins on `text` columns
     whose `keyword` subfield has no value (e.g. values longer than `ignore_above`).
     New option `filter.ignored-keyword.handling` (table option or hint) and
@@ -64,7 +66,9 @@
 
 -   Initial implementation of Elasticsearch SQL Dialect for flink-connector-jdbc
 
-[Unreleased]: https://github.com/getindata/flink-connector-jdbc-elasticsearch-dialect/compare/0.6.0...HEAD
+[Unreleased]: https://github.com/getindata/flink-connector-jdbc-elasticsearch-dialect/compare/0.7.0...HEAD
+
+[0.7.0]: https://github.com/getindata/flink-connector-jdbc-elasticsearch-dialect/compare/0.6.0...0.7.0
 
 [0.6.0]: https://github.com/getindata/flink-connector-jdbc-elasticsearch-dialect/compare/0.5.0...0.6.0
 
